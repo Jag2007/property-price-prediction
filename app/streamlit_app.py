@@ -416,6 +416,7 @@ REG_MODEL_PATH  = BASE_DIR / "models" / "xgb_regression_model.joblib"
 REG_SCALER_PATH = BASE_DIR / "models" / "regression_scaler.joblib"
 CLF_MODEL_PATH  = BASE_DIR / "models" / "xgb_classification_model.joblib"
 CLF_SCALER_PATH = BASE_DIR / "models" / "classification_scaler.joblib"
+HOSTED_APP_URL  = "https://property-price-prediction-real-estate.streamlit.app/"
 
 FURNISH_MAP   = {"Unfurnished": 0, "Semi-furnished": 1, "Fully-furnished": 2}
 NEIGHBORHOODS = ["Downtown", "IT Hub", "Industrial", "Residential", "Suburban"]
