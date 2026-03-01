@@ -322,9 +322,9 @@ Artifact constants used by inference:
 
 ---
 
-## Future Improvements
+## Future Enhancements
 
-- Hyperparameter tuning with cross-validation
-- SHAP-based explainability for both models
-- Time-aware retraining pipeline for market drift
-- Cloud deployment with model versioning and monitoring
+- Add model monitoring in the hosted Streamlit app (input drift, prediction drift, and confidence trends) with periodic retraining triggers.
+- Expand feature set with location-intelligence signals (pincode/zone index, nearby amenities, transport score) to improve valuation robustness.
+- Introduce explainability in predictions (feature contribution view for each estimate) so users can understand why a price/grade was predicted.
+- Build an investor advisory layer on top of current outputs that converts predicted price + investment grade into buy/hold/avoid guidance with risk notes.
