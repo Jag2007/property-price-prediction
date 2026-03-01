@@ -1,8 +1,11 @@
 from pathlib import Path
+import sys
 
 import joblib
 import pandas as pd
 import streamlit as st
+import xgboost
+import sklearn
 
 st.set_page_config(
     page_title="Property Predictor",
@@ -17,9 +20,18 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* Force light theme tokens even when host has dark defaults */
+:root {
+    --background-color: #F7F6F3;
+    --secondary-background-color: #FFFFFF;
+    --text-color: #1C1C1C;
+}
+
 /* ── Reset & base ── */
 *, *::before, *::after { box-sizing: border-box; }
-html, body, [class*="css"], .stApp {
+html, body, [class*="css"], .stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"] {
     font-family: 'Outfit', sans-serif !important;
     background: #F7F6F3 !important;
     color: #1C1C1C !important;
@@ -209,6 +221,11 @@ input[type="number"]:focus {
     background: #FFFFFF !important;
     border-radius: 10px !important;
 }
+/* BaseWeb popovers render in a portal; enforce colors there as well */
+body [data-baseweb="popover"] {
+    background: #FFFFFF !important;
+    color: #1C1C1C !important;
+}
 [data-baseweb="menu"],
 ul[role="listbox"] {
     background: #FFFFFF !important;
@@ -231,13 +248,19 @@ ul[role="listbox"] li {
 }
 [data-baseweb="menu"] li:hover,
 [data-baseweb="menu"] [aria-selected="true"],
-ul[role="listbox"] li:hover {
+ul[role="listbox"] li:hover,
+body [role="option"]:hover,
+body [role="option"][aria-selected="true"] {
     background: #F0EFEA !important;
     color: #1C1C1C !important;
     font-weight: 500 !important;
 }
 /* Any text node inside the menu */
-[data-baseweb="menu"] * { color: #1C1C1C !important; }
+[data-baseweb="menu"] *,
+ul[role="listbox"] *,
+body [data-baseweb="popover"] * {
+    color: #1C1C1C !important;
+}
 
 /* ── Primary button ── */
 .stButton > button,
@@ -441,17 +464,32 @@ def load_clean_data() -> pd.DataFrame:
 
 
 @st.cache_resource
-def load_artifacts():
+def load_artifacts(
+    reg_model_mtime: int,
+    reg_scaler_mtime: int,
+    clf_model_mtime: int,
+    clf_scaler_mtime: int,
+):
     reg_model   = joblib.load(REG_MODEL_PATH)
     reg_scaler  = joblib.load(REG_SCALER_PATH)
     clf_model   = joblib.load(CLF_MODEL_PATH)
     clf_scaler  = joblib.load(CLF_SCALER_PATH)
-    if hasattr(reg_scaler, "feature_names_in_"):
-        cols = list(reg_scaler.feature_names_in_)
-    elif hasattr(clf_scaler, "feature_names_in_"):
-        cols = list(clf_scaler.feature_names_in_)
-    else:
-        cols = FEATURE_COLUMNS_FALLBACK
+
+    reg_cols = list(reg_scaler.feature_names_in_) if hasattr(reg_scaler, "feature_names_in_") else []
+    clf_cols = list(clf_scaler.feature_names_in_) if hasattr(clf_scaler, "feature_names_in_") else []
+
+    if reg_cols and clf_cols and reg_cols != clf_cols:
+        raise ValueError("Regression and classification scalers use different feature orders.")
+
+    cols = reg_cols or clf_cols or FEATURE_COLUMNS_FALLBACK
+
+    if len(cols) != len(FEATURE_COLUMNS_FALLBACK):
+        raise ValueError(f"Unexpected feature count: got {len(cols)}, expected {len(FEATURE_COLUMNS_FALLBACK)}.")
+
+    missing = [c for c in FEATURE_COLUMNS_FALLBACK if c not in cols]
+    if missing:
+        raise ValueError(f"Missing required features in scaler: {missing}")
+
     return reg_model, reg_scaler, clf_model, clf_scaler, cols
 
 
@@ -495,6 +533,8 @@ def raw_to_feature_frame(raw_df, feature_columns, defaults):
 
 def run_predict(features, reg_model, reg_scaler, clf_model, clf_scaler):
     price = reg_model.predict(reg_scaler.transform(features))
+    # Price cannot be negative in this domain; clip defensive lower bound.
+    price = price.clip(min=0)
     grade = clf_model.predict(clf_scaler.transform(features))
     probs = clf_model.predict_proba(clf_scaler.transform(features))
     return price, grade, probs
@@ -700,7 +740,12 @@ def main():
         st.stop()
 
     df = load_clean_data()
-    reg_model, reg_scaler, clf_model, clf_scaler, feature_columns = load_artifacts()
+    reg_model, reg_scaler, clf_model, clf_scaler, feature_columns = load_artifacts(
+        int(REG_MODEL_PATH.stat().st_mtime_ns),
+        int(REG_SCALER_PATH.stat().st_mtime_ns),
+        int(CLF_MODEL_PATH.stat().st_mtime_ns),
+        int(CLF_SCALER_PATH.stat().st_mtime_ns),
+    )
     defaults = default_values(df, feature_columns)
 
     # ── Header ──────────────────────────────────────────────────────────────
@@ -729,6 +774,17 @@ def main():
         page_manual(defaults, feature_columns, reg_model, reg_scaler, clf_model, clf_scaler)
     else:
         page_about()
+
+    with st.expander("Runtime diagnostics"):
+        st.write(
+            {
+                "python": sys.version.split()[0],
+                "streamlit": st.__version__,
+                "xgboost": xgboost.__version__,
+                "scikit-learn": sklearn.__version__,
+                "feature_count": len(feature_columns),
+            }
+        )
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ The full workflow covers preprocessing, feature engineering, model training, eva
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │                         PROPERTY PRICE PREDICTION SYSTEM                                 │
-│                  xgboost Regression + Classification Pipeline                            │
+│                  Xgboost Regression + Classification Pipeline                            │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 
                                   DATA SOURCE
