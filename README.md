@@ -6,8 +6,6 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-Supported-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![XGBoost](https://img.shields.io/badge/XGBoost-2.0%2B-0F9D58?style=flat-square)](https://xgboost.readthedocs.io/)
 
-[Overview](#-overview) · [Architecture](#-system-architecture) · [Quickstart](#-quickstart) · [Models](#-models) · [Results](#-results) · [Application](#-application)
-
 ---
 
 ## Overview
