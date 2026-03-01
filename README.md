@@ -126,8 +126,11 @@ The full workflow covers preprocessing, feature engineering, model training, eva
 
 ```text
 property-price-prediction/
+├── .streamlit/
+│   └── config.toml
 ├── README.md
 ├── requirements.txt
+├── runtime.txt
 │
 ├── app/
 │   └── streamlit_app.py
@@ -143,6 +146,13 @@ property-price-prediction/
 │   ├── regression_scaler.joblib
 │   ├── xgb_classification_model.joblib
 │   └── classification_scaler.joblib
+│
+├── notebooks/
+│   └── training_colab.ipynb
+│
+└── report/
+    ├── property_price_prediction_report.pdf
+    └── property_price_prediction_report.tex
 ```
 
 ---
