@@ -303,14 +303,6 @@ The Streamlit application (`app/streamlit_app.py`) includes:
 
 ---
 
-## Project Document
-
-This repository aligns with the project brief document:
-
-- `Project 9_AI_ML.pdf` (provided separately)
-
----
-
 ## Future Improvements
 
 - Hyperparameter tuning with cross-validation
