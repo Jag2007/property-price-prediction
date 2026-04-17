@@ -140,16 +140,6 @@ CSV prediction emails attach the generated batch prediction CSV.
 
 ```text
 property-price-prediction/
-├── .env.example
-├── .gitignore
-├── .streamlit/
-│   ├── config.toml
-│   └── secrets.toml.example
-├── README.md
-├── requirements.txt
-├── runtime.txt
-├── system_architecture.png
-│
 ├── app/
 │   ├── streamlit_app.py
 │   ├── config.py
@@ -174,11 +164,16 @@ property-price-prediction/
 │
 ├── notebooks/
 │   └── training_colab.ipynb
-│
-└── report/
-    ├── property_price_prediction_report.pdf
-    └── property_price_prediction_report.tex
+├── report/
+│   ├── property_price_prediction_report.pdf
+│   └── property_price_prediction_report.tex
+├── system_architecture.png
+├── requirements.txt
+├── runtime.txt
+└── README.md
 ```
+
+The repository intentionally keeps generated files, local secrets, virtual environments, caches, and operating-system metadata out of version control.
 
 ---
 
@@ -205,13 +200,7 @@ pip install -r requirements.txt
 
 ### 3. Configure Local Secrets
 
-Copy the example file:
-
-```bash
-cp .env.example .env
-```
-
-Then fill in these values:
+Create a local `.env` file in the project root and add these values:
 
 ```bash
 GROQ_API_KEY=your-groq-api-key
@@ -226,7 +215,7 @@ EMAIL_FROM_NAME=Property Predictor
 
 For Gmail, `EMAIL_APP_PASSWORD` must be a Gmail app password, not the normal Gmail login password.
 
-For Streamlit secrets, copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` locally or add the same key-value pairs in Streamlit Cloud secrets.
+For Streamlit Cloud deployment, add the same key-value pairs in the app secrets panel.
 
 ### 4. Run The App
 

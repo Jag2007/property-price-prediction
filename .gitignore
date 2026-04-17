@@ -1,11 +1,12 @@
 # Local secrets and environment
 .env
 .env.*
-!.env.example
 .streamlit/secrets.toml
+.streamlit/secrets.toml.*
 
 # Python caches and virtual environments
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 .Python
@@ -24,6 +25,7 @@ htmlcov/
 # Streamlit/runtime caches
 .streamlit/cache/
 .streamlit/credentials.toml
+.streamlit/logs/
 
 # Notebook checkpoints
 .ipynb_checkpoints/
@@ -31,6 +33,7 @@ htmlcov/
 
 # OS and editor files
 .DS_Store
+**/.DS_Store
 Thumbs.db
 .vscode/
 .idea/
@@ -44,3 +47,4 @@ tmp/
 temp/
 outputs/
 property_predictions.csv
+*.tmp

@@ -95,12 +95,13 @@ def load_local_env():
             os.environ[key] = value
 
 
-# Ignore empty placeholder values from .env.example.
+# Ignore empty placeholder values copied from setup documentation.
 def is_real_config_value(value):
     if not value:
         return False
     value = str(value).strip()
-    return not value.lower().startswith("replace-with")
+    lowered = value.lower()
+    return not (lowered.startswith("replace-with") or lowered.startswith("your-"))
 
 
 # Read one setting from .env, normal environment variables, or Streamlit secrets.
