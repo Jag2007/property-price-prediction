@@ -1,9 +1,11 @@
 import pandas as pd
 import streamlit as st
 
-from agent_flow import agent_audit_rows, api_settings_from, assemble_agent_fields
+from explanation_agent import explanation_settings_from, generate_explanation
+from input_agent import agent_audit_rows, api_settings_from, assemble_agent_fields
+from notification_agent import email_settings_from, send_csv_predictions_email, send_prediction_email
 from config import FURNISH_MAP, GRADE_LABELS, INT_COLUMNS, LABELS, NEIGHBORHOODS, PROMPT_EXAMPLE, RAW_NUMERIC_COLUMNS
-from ml_pipeline import build_feature_row, predict_single, raw_to_feature_frame, run_predict
+from prediction_agent import build_feature_row, predict_single, raw_to_feature_frame, run_predict
 
 SOURCE_LABELS = {
     "Groq extracted": "Prompt",
@@ -14,7 +16,7 @@ SOURCE_LABELS = {
 
 
 # Show the common prediction output block used by prompt and manual pages.
-def render_result(result):
+def render_result(result, explanation=None, flow=None, email_key="email"):
     m1, m2, m3 = st.columns(3)
     m1.metric("Predicted Price", f"Rs {result['price']:,.0f}")
     m2.metric("Investment Grade", GRADE_LABELS.get(result["grade"], str(result["grade"])))
@@ -24,6 +26,48 @@ def render_result(result):
         [{"Investment Grade": grade, "Probability": f"{prob:.1%}"} for grade, prob in result["probabilities"].items()]
     )
     st.dataframe(prob_df, width="stretch", hide_index=True, height=145)
+
+    if explanation:
+        st.markdown("## Explanation")
+        st.info(explanation)
+
+    render_email_form(result, explanation, flow, email_key)
+
+
+# Show the email delivery form handled by the Notification Agent.
+def render_email_form(result, explanation, flow, key_prefix):
+    with st.expander("Email this result"):
+        recipient = st.text_input("Recipient email", key=f"{key_prefix}_recipient")
+        if st.button("Send Email", width="stretch", key=f"{key_prefix}_send"):
+            try:
+                send_prediction_email(
+                    recipient,
+                    result,
+                    explanation,
+                    flow,
+                    email_settings_from(st.secrets),
+                )
+            except Exception as exc:
+                st.error(f"Email failed: {exc}")
+            else:
+                st.success("Prediction email sent successfully.")
+
+
+# Show an email form for sending the batch CSV prediction output.
+def render_csv_email_form(output_df):
+    with st.expander("Email batch results"):
+        recipient = st.text_input("Recipient email", key="csv_email_recipient")
+        if st.button("Send CSV by Email", width="stretch", key="csv_email_send"):
+            try:
+                send_csv_predictions_email(
+                    recipient,
+                    output_df,
+                    email_settings_from(st.secrets),
+                )
+            except Exception as exc:
+                st.error(f"Email failed: {exc}")
+            else:
+                st.success("Batch prediction email sent successfully.")
 
 
 # Show compact counts after prompt extraction.
@@ -77,7 +121,7 @@ def page_agent(context):
         reset = st.button("Start Over", width="stretch")
 
     if reset:
-        for key in ["agent_flow", "agent_result", "agent_dialog"]:
+        for key in ["agent_flow", "agent_result", "agent_explanation", "agent_dialog"]:
             st.session_state.pop(key, None)
         st.rerun()
 
@@ -102,6 +146,7 @@ def page_agent(context):
             return
         st.session_state["agent_dialog"] = "review"
         st.session_state.pop("agent_result", None)
+        st.session_state.pop("agent_explanation", None)
 
     flow = st.session_state.get("agent_flow")
     if not flow:
@@ -125,7 +170,12 @@ def page_agent(context):
     if "agent_result" in st.session_state:
         st.markdown("---")
         st.markdown("## Prediction")
-        render_result(st.session_state["agent_result"])
+        render_result(
+            st.session_state["agent_result"],
+            st.session_state.get("agent_explanation"),
+            st.session_state.get("agent_flow"),
+            "agent_email",
+        )
 
     # Keep confirmation in a popup so the main page does not become scroll-heavy.
     @st.dialog("Review categorized parameters", width="large")
@@ -157,11 +207,17 @@ def page_agent(context):
         d1, d2, d3 = st.columns(3, gap="medium")
         with d1:
             if st.button("Proceed", width="stretch"):
-                st.session_state["agent_result"] = predict_single(
+                result = predict_single(
                     flow["numeric_inputs"],
                     flow["furnishing"],
                     flow["neighborhood"],
                     context,
+                )
+                st.session_state["agent_result"] = result
+                st.session_state["agent_explanation"] = generate_explanation(
+                    flow,
+                    result,
+                    explanation_settings_from(st.secrets),
                 )
                 st.session_state["agent_dialog"] = None
                 st.rerun()
@@ -247,11 +303,17 @@ def page_agent(context):
                 "agent_source": flow.get("agent_source", "Groq extracted"),
                 "agent_warning": None,
             }
-            st.session_state["agent_result"] = predict_single(
+            result = predict_single(
                 edited_numeric,
                 edited_furnishing,
                 edited_neighborhood,
                 context,
+            )
+            st.session_state["agent_result"] = result
+            st.session_state["agent_explanation"] = generate_explanation(
+                st.session_state["agent_flow"],
+                result,
+                explanation_settings_from(st.secrets),
             )
             st.session_state["agent_dialog"] = None
             st.rerun()
@@ -321,9 +383,26 @@ def clear_agent_edit_keys():
 def clear_stale_fallback_flow(settings):
     flow = st.session_state.get("agent_flow")
     if settings.get("api_key") and flow and flow.get("agent_source") == "Rule parser fallback":
-        for key in ["agent_flow", "agent_result", "agent_dialog"]:
+        for key in ["agent_flow", "agent_result", "agent_explanation", "agent_dialog"]:
             st.session_state.pop(key, None)
         st.info("Groq key is now loaded. Re-analyze the prompt to use Groq extraction.")
+
+
+# Build a flow-shaped object for manual input so explanation/email can reuse one format.
+def manual_flow(numeric_inputs, furnishing, neighborhood):
+    return {
+        "prompt": "Manual input",
+        "numeric_inputs": numeric_inputs,
+        "furnishing": furnishing,
+        "neighborhood": neighborhood,
+        "sources": {
+            **{col: "Edited by user" for col in RAW_NUMERIC_COLUMNS},
+            "Furnishing_Status": "Edited by user",
+            "Neighborhood": "Edited by user",
+        },
+        "agent_source": "Manual input",
+        "agent_warning": None,
+    }
 
 
 # CSV page for batch predictions using either raw or already-encoded columns.
@@ -387,6 +466,10 @@ def page_csv(context):
             mime="text/csv",
             width="stretch",
         )
+        st.session_state["csv_result"] = out
+
+    if "csv_result" in st.session_state:
+        render_csv_email_form(st.session_state["csv_result"])
 
 
 # Manual page for directly entering structured model fields.
@@ -418,6 +501,7 @@ def page_manual(context):
     st.markdown("---")
 
     if st.button("Predict", width="stretch"):
+        flow = manual_flow(numeric_inputs, furnishing, neighborhood)
         row = build_feature_row(numeric_inputs, furnishing, neighborhood, context["feature_columns"])
         prices, grades, probs = run_predict(
             row,
@@ -433,9 +517,20 @@ def page_manual(context):
             "confidence": float(probs[0].max()),
             "probabilities": {GRADE_LABELS.get(i, str(i)): float(probs[0][i]) for i in range(probs.shape[1])},
         }
+        st.session_state["last_flow"] = flow
+        st.session_state["last_explanation"] = generate_explanation(
+            flow,
+            st.session_state["last_result"],
+            explanation_settings_from(st.secrets),
+        )
 
     if "last_result" in st.session_state:
-        render_result(st.session_state["last_result"])
+        render_result(
+            st.session_state["last_result"],
+            st.session_state.get("last_explanation"),
+            st.session_state.get("last_flow"),
+            "manual_email",
+        )
 
 
 # About page summarizing the system for demo/project review.
@@ -452,11 +547,10 @@ and <strong>investment grade</strong> using XGBoost, with a Groq-powered prompt 
     st.markdown("## Agentic Flow")
     st.markdown(
         """
-1. User describes a property in natural language.
-2. The Groq extractor uses `GROQ_API_KEY` when configured.
-3. Missing fields are filled from training-data defaults.
-4. A review popup asks the user to proceed, change values, or close.
-5. The confirmed values are converted into model features and sent to the saved XGBoost models.
+1. **Input Agent** extracts property fields from a prompt using Groq, then fills missing fields with defaults.
+2. **Prediction Agent** converts confirmed fields into model features and runs the saved XGBoost models.
+3. **Explanation Agent** explains the model output in simple language using Groq.
+4. **Notification Agent** emails the final prediction and explanation to the recipient entered by the user.
 """
     )
 
@@ -494,8 +588,10 @@ and <strong>investment grade</strong> using XGBoost, with a Groq-powered prompt 
         """app/
   streamlit_app.py   # app shell
   config.py          # paths, labels, feature lists
-  agent_flow.py      # Groq extractor and fallback parser
-  ml_pipeline.py     # model loading, defaults, prediction
+  input_agent.py     # Groq prompt extraction and defaults
+  prediction_agent.py # model loading, features, prediction
+  explanation_agent.py # Groq prediction explanation
+  notification_agent.py # email delivery
   pages.py           # Streamlit pages and dialogs
   styles.py          # visual styling""",
         language="text",

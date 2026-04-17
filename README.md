@@ -133,7 +133,14 @@ property-price-prediction/
 ├── runtime.txt
 │
 ├── app/
-│   └── streamlit_app.py
+│   ├── streamlit_app.py
+│   ├── input_agent.py
+│   ├── prediction_agent.py
+│   ├── explanation_agent.py
+│   ├── notification_agent.py
+│   ├── pages.py
+│   ├── config.py
+│   └── styles.py
 │
 ├── data/
 │   ├── raw/
@@ -182,7 +189,7 @@ streamlit run app/streamlit_app.py
 
 ### 4. Enable the Groq prompt agent
 
-For local runs, copy the example env file and add your Groq key:
+For local runs, copy the example env file and add your Groq and email settings:
 
 ```bash
 cp .env.example .env
@@ -193,9 +200,15 @@ Then set:
 ```bash
 GROQ_API_KEY=your-groq-api-key
 GROQ_MODEL=llama-3.3-70b-versatile
+
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_SENDER=your-project-email@gmail.com
+EMAIL_APP_PASSWORD=your-gmail-app-password
+EMAIL_FROM_NAME=Property Predictor
 ```
 
-For Streamlit Cloud, add the same values in app secrets. If no key is configured, the prompt agent automatically uses the local rule-based fallback so the app can still be demoed.
+For Gmail, `EMAIL_APP_PASSWORD` is an app password from Google account security settings, not your normal Gmail password. For Streamlit Cloud, add the same values in app secrets. If no Groq key is configured, the input agent automatically uses the local rule-based fallback so the app can still be demoed.
 
 ### 5. Re-train models (optional)
 
@@ -297,40 +310,47 @@ Metrics below are from a previous training run of this pipeline:
 
 ## Application
 
-The Streamlit application (`app/streamlit_app.py`) includes:
+The Streamlit application (`app/streamlit_app.py`) includes four clear agent files:
 
-### 1. Predict
+### 1. Input Agent
 
-- Manual property input form
-- Simultaneous prediction of:
-  - `Current_Market_Price`
-  - `Investment_Grade`
-- Class probability visualization
+- `app/input_agent.py`
+- Extracts user prompt fields using Groq
+- Fills missing values with training-data defaults
 
-### 2. Batch Predict
+### 2. Prediction Agent
+
+- `app/prediction_agent.py`
+- Builds model-ready features
+- Runs the saved XGBoost regression and classification models
+
+### 3. Explanation Agent
+
+- `app/explanation_agent.py`
+- Explains the prediction in simple language using Groq
+
+### 4. Notification Agent
+
+- `app/notification_agent.py`
+- Sends single prediction results or CSV batch outputs by email
+
+The UI still supports:
 
 - CSV upload for bulk inference
-- Supports:
-  - fully encoded feature columns, or
-  - raw columns with `Furnishing_Status` and `Neighborhood`
+- Manual property input form
+- Natural-language prompt input
 - Downloadable predictions CSV
-
-### 3. About
-
-- Summary of preprocessing, model training, and deployment flow
 
 ---
 
 ## Inference Pipeline (Code-Aligned)
 
-The deployed inference flow in `app/streamlit_app.py` uses these functions:
+The deployed inference flow uses these agent functions:
 
-1. `load_artifacts(...)`
-2. `default_values(df, feature_columns)`
-3. `build_feature_row(...)` for manual input
-4. `raw_to_feature_frame(...)` for CSV raw input
-5. `run_predict(features, reg_model, reg_scaler, clf_model, clf_scaler)`
-6. `page_manual(...)` and `page_csv(...)` UI handlers
+1. `assemble_agent_fields(...)` in `input_agent.py`
+2. `predict_single(...)` / `run_predict(...)` in `prediction_agent.py`
+3. `generate_explanation(...)` in `explanation_agent.py`
+4. `send_prediction_email(...)` / `send_csv_predictions_email(...)` in `notification_agent.py`
 
 Artifact constants used by inference:
 

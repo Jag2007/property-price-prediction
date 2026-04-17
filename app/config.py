@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -72,3 +73,45 @@ PROMPT_EXAMPLE = (
     "crime index 32, AQI 88, growth 9%, price per sqft 7200, "
     "annual tax 85000, rental yield 4.2%."
 )
+
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+
+
+# Load local .env values so local demos can use Groq/email without Streamlit secrets.
+def load_local_env():
+    env_path = BASE_DIR / ".env"
+    if not env_path.exists():
+        return
+
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+# Ignore empty placeholder values from .env.example.
+def is_real_config_value(value):
+    if not value:
+        return False
+    value = str(value).strip()
+    return not value.lower().startswith("replace-with")
+
+
+# Read one setting from .env, normal environment variables, or Streamlit secrets.
+def config_value(secrets, key):
+    load_local_env()
+    value = os.getenv(key)
+    if is_real_config_value(value):
+        return value
+
+    try:
+        value = secrets.get(key)
+    except Exception:
+        value = None
+    return value if is_real_config_value(value) else None

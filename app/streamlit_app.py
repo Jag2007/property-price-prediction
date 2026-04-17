@@ -10,8 +10,8 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 from config import CLF_MODEL_PATH, CLF_SCALER_PATH, DATA_PATH, REG_MODEL_PATH, REG_SCALER_PATH
-from ml_pipeline import load_runtime_context
 from pages import page_about, page_agent, page_csv, page_manual
+from prediction_agent import load_runtime_context
 from styles import apply_styles
 
 

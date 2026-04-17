@@ -1,52 +1,22 @@
+# Input Agent
+# This agent converts a user's natural-language property prompt into structured model fields.
+# It uses Groq when GROQ_API_KEY is configured, and falls back to simple local parsing only when no key is available.
+
 import json
-import os
 import re
 import urllib.error
 import urllib.request
 
-from config import BASE_DIR, FURNISH_MAP, INT_COLUMNS, LABELS, NEIGHBORHOODS, RAW_NUMERIC_COLUMNS
-
-DEFAULT_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
-
-
-# Load local .env values for development without adding another dependency.
-def load_local_env():
-    env_path = BASE_DIR / ".env"
-    if not env_path.exists():
-        return
-
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
-# Read one config value from .env, environment variables, or Streamlit secrets.
-def config_value(secrets, key):
-    load_local_env()
-    value = os.getenv(key)
-    if is_real_config_value(value):
-        return value
-
-    try:
-        value = secrets.get(key)
-    except Exception:
-        value = None
-    return value if is_real_config_value(value) else None
-
-
-# Treat blank placeholder values as missing so demos do not call Groq accidentally.
-def is_real_config_value(value):
-    if not value:
-        return False
-    value = str(value).strip()
-    return not value.lower().startswith("replace-with")
+from config import (
+    FURNISH_MAP,
+    GROQ_API_URL,
+    GROQ_MODEL,
+    INT_COLUMNS,
+    LABELS,
+    NEIGHBORHOODS,
+    RAW_NUMERIC_COLUMNS,
+    config_value,
+)
 
 
 # Return the Groq settings used by the prompt extraction step.
@@ -54,8 +24,8 @@ def api_settings_from(secrets):
     api_key = config_value(secrets, "GROQ_API_KEY")
     return {
         "api_key": api_key,
-        "api_url": config_value(secrets, "GROQ_API_URL") or DEFAULT_API_URL,
-        "model": config_value(secrets, "GROQ_MODEL") or DEFAULT_MODEL,
+        "api_url": config_value(secrets, "GROQ_API_URL") or GROQ_API_URL,
+        "model": config_value(secrets, "GROQ_MODEL") or GROQ_MODEL,
     }
 
 

@@ -1,3 +1,7 @@
+# Prediction Agent
+# This agent converts confirmed property fields into the feature schema used during training.
+# It loads the saved scalers and XGBoost models, then predicts price, investment grade, and confidence.
+
 import joblib
 import pandas as pd
 import streamlit as st
@@ -16,14 +20,12 @@ from config import (
 )
 
 
-# Load the processed training data used for medians and category defaults.
 @st.cache_data
 # Load the processed training data used for medians and category defaults.
 def load_clean_data() -> pd.DataFrame:
     return pd.read_csv(DATA_PATH)
 
 
-# Load model artifacts once and verify both models expect the same feature order.
 @st.cache_resource
 # Load model artifacts once and verify both models expect the same feature order.
 def load_artifacts(
