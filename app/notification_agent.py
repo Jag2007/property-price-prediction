@@ -3,12 +3,41 @@
 # Sender credentials come from .env or Streamlit secrets, so the user only enters the receiver email.
 
 import smtplib
+import re
 from email.message import EmailMessage
 from email.utils import formataddr
 from html import escape
 from re import fullmatch
 
 from config import GRADE_LABELS, LABELS, RAW_NUMERIC_COLUMNS, config_value
+
+EXPLANATION_HIGHLIGHT_STYLE = (
+    "background:#fff4d8;color:#6b4700;padding:2px 5px;"
+    "border-radius:5px;font-weight:700;"
+)
+
+EXPLANATION_KEY_TERMS = (
+    "predicted price",
+    "investment grade",
+    "confidence",
+    "city center",
+    "public transport",
+    "square footage",
+    "bedrooms",
+    "bathrooms",
+    "neighborhood growth",
+    "crime index",
+    "air quality",
+    "price per sq ft",
+    "annual tax",
+    "rental yield",
+    "furnishing status",
+    "location",
+    "accessibility",
+    "prompt",
+    "default",
+    "edited",
+)
 
 SOURCE_LABELS = {
     "Groq extracted": "Prompt",
@@ -82,7 +111,46 @@ def property_summary_rows(flow):
 
 # Strip simple Markdown markers so plain-text email stays readable.
 def clean_markdown(text):
-    return (text or "").replace("**", "").replace("* ", "- ")
+    cleaned = (text or "").replace("**", "")
+    return re.sub(r"^\s*\*\s+", "- ", cleaned, flags=re.MULTILINE)
+
+
+# Highlight important terms inside plain escaped text.
+def highlight_plain_terms(text):
+    highlighted = text
+    for term in sorted(EXPLANATION_KEY_TERMS, key=len, reverse=True):
+        pattern = re.compile(rf"(?<!\w)({re.escape(term)})(?!\w)", re.IGNORECASE)
+        highlighted = pattern.sub(
+            lambda match: f"<strong style='{EXPLANATION_HIGHLIGHT_STYLE}'>{match.group(1)}</strong>",
+            highlighted,
+        )
+    return highlighted
+
+
+# Convert Groq Markdown emphasis and key real-estate terms into safe highlighted HTML.
+def highlight_explanation_text(text):
+    parts = re.split(r"(\*\*.*?\*\*)", text or "")
+    html_parts = []
+    for part in parts:
+        if part.startswith("**") and part.endswith("**"):
+            phrase = escape(part[2:-2].strip())
+            if phrase:
+                html_parts.append(
+                    f"<strong style='{EXPLANATION_HIGHLIGHT_STYLE}'>{phrase}</strong>"
+                )
+        else:
+            html_parts.append(highlight_plain_terms(escape(part)))
+    return "".join(html_parts)
+
+
+# Detect whether an explanation line should be displayed as a bullet.
+def explanation_line_parts(raw_line):
+    line = raw_line.strip()
+    if line.startswith("- ") or line.startswith("* "):
+        return True, line[2:].strip()
+    if line.startswith("-") or line.startswith("*"):
+        return True, line[1:].strip()
+    return False, line
 
 
 # Format a plain-text fallback version of the prediction email.
@@ -178,19 +246,32 @@ def explanation_html(explanation):
     if not explanation:
         return ""
 
-    lines = []
-    for raw_line in clean_markdown(explanation).splitlines():
-        line = raw_line.strip()
+    sections = []
+    bullet_lines = []
+
+    # Close the current bullet group before adding normal paragraphs.
+    def flush_bullets():
+        if bullet_lines:
+            sections.append(
+                "<ul style='padding-left:20px;margin:8px 0;color:#333333;'>"
+                + "".join(bullet_lines)
+                + "</ul>"
+            )
+            bullet_lines.clear()
+
+    for raw_line in explanation.splitlines():
+        is_bullet, line = explanation_line_parts(raw_line)
         if not line:
             continue
-        if line.startswith("-"):
-            lines.append(f"<li>{escape(line.lstrip('-').strip())}</li>")
+        formatted_line = highlight_explanation_text(line)
+        if is_bullet:
+            bullet_lines.append(f"<li style='margin:8px 0;'>{formatted_line}</li>")
         else:
-            lines.append(f"<p style='margin:8px 0;color:#333333;'>{escape(line)}</p>")
+            flush_bullets()
+            sections.append(f"<p style='margin:8px 0;color:#333333;'>{formatted_line}</p>")
 
-    body = "".join(lines)
-    if "<li>" in body:
-        body = f"<ul style='padding-left:20px;margin:8px 0;color:#333333;'>{body}</ul>"
+    flush_bullets()
+    body = "".join(sections)
     return f"""
     <h2 style="font-size:18px;margin:26px 0 10px;">Quick Explanation</h2>
     <div style="background:#f7f6f3;border-radius:10px;padding:14px;">{body}</div>

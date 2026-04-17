@@ -38,6 +38,21 @@ The full workflow covers preprocessing, feature engineering, model training, eva
 
 ## System Architecture
 
+### Agentic Application Architecture
+
+![System Architecture](system_architecture.png)
+
+### Data Flow From Input To Output
+
+1. The user starts in the Streamlit interface and chooses one input mode: natural-language prompt, manual form, or CSV upload.
+2. For natural-language input, the Input Agent sends the text to Groq and maps the response into the exact project fields. For manual and CSV input, the app already receives structured fields and validates them directly.
+3. Any missing value is filled using defaults learned from the processed training data, so the ML model always receives a complete feature set.
+4. Before prediction, the app opens a review step where the user can confirm the extracted values or edit them. The source is tracked as Prompt, Default, or Edited.
+5. The Prediction Agent converts the confirmed values into the same feature format used during training, applies the saved scalers, and runs the XGBoost regression and classification models.
+6. The app returns predicted market price, investment grade, confidence, and class probabilities.
+7. The Explanation Agent uses Groq to turn the model result and confirmed property details into simple user-facing reasoning.
+8. The Notification Agent formats the result, explanation, and full property summary into an email. It uses SMTP credentials from `.env` or Streamlit secrets and sends the final report to the recipient.
+
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │                         PROPERTY PRICE PREDICTION SYSTEM                                 │
