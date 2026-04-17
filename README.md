@@ -1,11 +1,12 @@
 # Property Price Prediction
 
-### Intelligent Real Estate Valuation & Investment Grade Classification via Feature Engineering and XGBoost
+### Agentic Real Estate Price Prediction with Groq, XGBoost, Streamlit, and Email Notifications
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Supported-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
-[![XGBoost](https://img.shields.io/badge/XGBoost-2.0%2B-0F9D58?style=flat-square)](https://xgboost.readthedocs.io/)
-[![Live App](https://img.shields.io/badge/Live%20App-Open-1C1C1C?style=flat-square)](https://property-price-prediction-real-estate.streamlit.app/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.54.0-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
+[![XGBoost](https://img.shields.io/badge/XGBoost-3.2.0-0F9D58?style=flat-square)](https://xgboost.readthedocs.io/)
+
+This project predicts property market price and investment grade using saved XGBoost models. It also adds an agentic layer where Groq converts natural-language property descriptions into model-ready fields, explains the prediction, and sends the final result by email.
 
 Hosted Streamlit URL: <https://property-price-prediction-real-estate.streamlit.app/>
 
@@ -13,127 +14,125 @@ Hosted Streamlit URL: <https://property-price-prediction-real-estate.streamlit.a
 
 ## Overview
 
-Real-estate decisions depend on two hard questions:
+The application answers two real-estate questions:
 
-1. What is the **fair current market price** of a property?
-2. Is this property a good **investment grade** option?
+1. What is the estimated **current market price** of the property?
+2. What is the predicted **investment grade** of the property?
 
-This project provides an end-to-end ML pipeline that automates both predictions using XGBoost:
+The current project has two connected parts:
 
-- **Regression task:** predicts `Current_Market_Price`
-- **Classification task:** predicts `Investment_Grade` (0, 1, 2)
+- **ML prediction pipeline:** uses trained XGBoost regression and classification models.
+- **Agentic application flow:** uses Groq and modular agents to extract inputs, explain predictions, and notify users.
 
-The full workflow covers preprocessing, feature engineering, model training, evaluation, artifact persistence, and real-time inference through Streamlit.
+The app supports three input modes:
 
-### Problem Statement
-
-| Challenge                        | Scope                                           |
-| -------------------------------- | ----------------------------------------------- |
-| Manual valuation inconsistencies | Property pricing varies by feature interactions |
-| Multi-objective prediction       | Continuous price + categorical investment grade |
-| Data quality issues              | Missing values, categorical features, outliers  |
-| Deployment requirement           | Real-time predictions for unseen properties     |
+- **Prompt Agent:** user describes the property in normal text.
+- **Manual Input:** user enters all fields directly.
+- **CSV Upload:** user uploads many properties for batch prediction.
 
 ---
 
 ## System Architecture
 
-### Agentic Application Architecture
+### Architecture Diagram
 
 ![System Architecture](system_architecture.png)
 
-### Data Flow From Input To Output
+### Active Agentic Workflow
 
-1. The user starts in the Streamlit interface and chooses one input mode: natural-language prompt, manual form, or CSV upload.
-2. For natural-language input, the Input Agent sends the text to Groq and maps the response into the exact project fields. For manual and CSV input, the app already receives structured fields and validates them directly.
-3. Any missing value is filled using defaults learned from the processed training data, so the ML model always receives a complete feature set.
-4. Before prediction, the app opens a review step where the user can confirm the extracted values or edit them. The source is tracked as Prompt, Default, or Edited.
-5. The Prediction Agent converts the confirmed values into the same feature format used during training, applies the saved scalers, and runs the XGBoost regression and classification models.
-6. The app returns predicted market price, investment grade, confidence, and class probabilities.
-7. The Explanation Agent uses Groq to turn the model result and confirmed property details into simple user-facing reasoning.
-8. The Notification Agent formats the result, explanation, and full property summary into an email. It uses SMTP credentials from `.env` or Streamlit secrets and sends the final report to the recipient.
+The application is split into four agent files:
 
-```text
-┌──────────────────────────────────────────────────────────────────────────────────────────┐
-│                         PROPERTY PRICE PREDICTION SYSTEM                                 │
-│                  Xgboost Regression + Classification Pipeline                            │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+| Agent | File | Responsibility |
+| --- | --- | --- |
+| Input Agent | `app/input_agent.py` | Extracts property fields from a user prompt using Groq and fills missing fields with defaults. |
+| Prediction Agent | `app/prediction_agent.py` | Loads the saved model artifacts, builds model-ready features, and predicts price/grade/confidence. |
+| Explanation Agent | `app/explanation_agent.py` | Uses Groq to generate a short, simple explanation for the prediction. |
+| Notification Agent | `app/notification_agent.py` | Formats prediction results and sends single-result or CSV-result emails through SMTP. |
 
-                                  DATA SOURCE
-                          ──────────────────────────
-                               real_estate_raw.csv
-                    (Property attributes + price + investment grade)
+---
 
-╔════════════════════════════════════ TRAINING PIPELINE ═══════════════════════════════════╗
+## Data Flow From Input To Output
 
-        ┌────────────────────┐
-        │ Data Loading       │
-        │ real_estate_raw.csv
-        └─────────┬──────────┘
-                  ▼
-        ┌─────────────────────────────────────────────────────┐
-        │ Preprocessing                                       │
-        │-----------------------------------------------------│
-        │ • Median imputation for numeric missing values      │
-        │ • Ordinal encoding: Furnishing_Status (0/1/2)       │
-        │ • One-hot encoding: Neighborhood (drop-first)       │
-        │ • IQR clipping for outliers (except target columns) │
-        └─────────┬───────────────────────────────────────────┘
-                  ▼
-        ┌────────────────────────────────────────────────────────────┐
-        │ Machine Learning Models                                   │
-        │------------------------------------------------------------│
-        │ XGBRegressor: Predict Current_Market_Price                │
-        │ XGBClassifier: Predict Investment_Grade                   │
-        └─────────┬──────────────────────────────────────────────────┘
-                  ▼
-        ┌────────────────────────────────────────────────────────────┐
-        │ Model Persistence                                          │
-        │ xgb_regression_model.joblib                               │
-        │ regression_scaler.joblib                                  │
-        │ xgb_classification_model.joblib                           │
-        │ classification_scaler.joblib                              │
-        └────────────────────────────────────────────────────────────┘
+### 1. User Input
 
-╚═══════════════════════════════════════════════════════════════════════════════════════════╝
+The user enters data through one of three Streamlit pages:
 
-╔════════════════════════════════════ INFERENCE PIPELINE ══════════════════════════════════╗
+- **Prompt Agent:** a natural-language sentence such as `1450 sqft 3 BHK, 2 bathrooms, IT Hub, 4.5 km from city center`.
+- **Manual Input:** direct form fields for all numeric and categorical property values.
+- **CSV Upload:** a CSV file containing either raw property fields or already encoded model features.
 
-        User Input (app/streamlit_app.py)
-        (Manual form or CSV batch input)
-                    │
-                    ▼
-        ┌──────────────────────┐
-        │ Load Models & Scalers│
-        │ from /models          │
-        └─────────┬────────────┘
-                  ▼
-        ┌──────────────────────────────────────────┐
-        │ Feature Construction                      │
-        │------------------------------------------│
-        │ • Numeric feature validation              │
-        │ • Furnishing ordinal mapping              │
-        │ • Neighborhood one-hot transformation     │
-        └─────────┬────────────────────────────────┘
-                  ▼
-        ┌──────────────────────────────────────────┐
-        │ Prediction Engine                         │
-        │------------------------------------------│
-        │ • scaler.transform(features)              │
-        │ • reg_model.predict()                     │
-        │ • clf_model.predict() + predict_proba()   │
-        └─────────┬────────────────────────────────┘
-                  ▼
-        ┌──────────────────────────────────────────┐
-        │ Outputs                                  │
-        │------------------------------------------│
-        │ • Predicted Current Market Price         │
-        │ • Predicted Investment Grade             │
-        │ • Class probability distribution          │
-        └──────────────────────────────────────────┘
+### 2. Input Processing
 
-╚═══════════════════════════════════════════════════════════════════════════════════════════╝
-```
+For prompt input, `app/input_agent.py` sends the text to Groq using `GROQ_API_KEY`. Groq returns JSON containing:
+
+- numeric property fields,
+- furnishing status,
+- neighborhood.
+
+If the prompt does not mention a field, the app fills it using defaults from `data/processed/real_estate_clean.csv`. If no Groq key is configured, the app can use a local rule-based fallback for demo safety, but the intended agentic mode is Groq extraction.
+
+For manual input, values are already structured by the form.
+
+For CSV upload, the app accepts:
+
+- raw columns such as `Total_Square_Footage`, `Bedrooms`, `Furnishing_Status`, and `Neighborhood`, or
+- encoded feature columns matching the saved scaler/model schema.
+
+### 3. Review And Confirmation
+
+Prompt input opens a review popup before prediction. Each value is labeled by source:
+
+- **Prompt:** extracted from the user's text by Groq.
+- **Default:** filled by the app because the user did not provide it.
+- **Edited:** changed by the user before prediction.
+
+Only the fields actually changed in the edit popup are marked as **Edited**.
+
+### 4. Feature Construction
+
+`app/prediction_agent.py` converts confirmed user-facing fields into the feature format used during training:
+
+- numeric fields are placed in the saved feature order,
+- `Furnishing_Status` is ordinal encoded,
+- `Neighborhood` is one-hot encoded,
+- missing CSV numeric values are filled with training-data medians.
+
+### 5. Model Prediction
+
+The Prediction Agent loads these artifacts from `models/`:
+
+- `xgb_regression_model.joblib`
+- `regression_scaler.joblib`
+- `xgb_classification_model.joblib`
+- `classification_scaler.joblib`
+
+The app then:
+
+1. scales the feature row,
+2. predicts market price with `XGBRegressor`,
+3. predicts investment grade with `XGBClassifier`,
+4. calculates confidence from the highest class probability.
+
+### 6. Explanation Generation
+
+`app/explanation_agent.py` sends the confirmed property inputs and model output to Groq. Groq returns 3 to 5 short bullet points explaining likely reasons for the prediction in simple language.
+
+The explanation is shown in the UI and included in the email report.
+
+### 7. Notification
+
+`app/notification_agent.py` sends results by email using SMTP credentials from `.env`, environment variables, or Streamlit secrets.
+
+Single prediction emails include:
+
+- predicted price,
+- investment grade,
+- confidence,
+- property summary,
+- source labels showing Prompt / Default / Edited,
+- highlighted explanation text for quick reading.
+
+CSV prediction emails attach the generated batch prediction CSV.
 
 ---
 
@@ -141,20 +140,24 @@ The full workflow covers preprocessing, feature engineering, model training, eva
 
 ```text
 property-price-prediction/
+├── .env.example
+├── .gitignore
 ├── .streamlit/
-│   └── config.toml
+│   ├── config.toml
+│   └── secrets.toml.example
 ├── README.md
 ├── requirements.txt
 ├── runtime.txt
+├── system_architecture.png
 │
 ├── app/
 │   ├── streamlit_app.py
+│   ├── config.py
 │   ├── input_agent.py
 │   ├── prediction_agent.py
 │   ├── explanation_agent.py
 │   ├── notification_agent.py
 │   ├── pages.py
-│   ├── config.py
 │   └── styles.py
 │
 ├── data/
@@ -181,36 +184,34 @@ property-price-prediction/
 
 ## Quickstart
 
-### 1. Enter the project
-
-```bash
-cd property-price-prediction
-```
-
-### 2. Set up environment
+### 1. Create And Activate A Virtual Environment
 
 ```bash
 python3 -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+source venv/bin/activate
+```
+
+On Windows:
+
+```bash
+venv\Scripts\activate
+```
+
+### 2. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. Launch the app
+### 3. Configure Local Secrets
 
-```bash
-streamlit run app/streamlit_app.py
-# Opens at http://localhost:8501
-```
-
-### 4. Enable the Groq prompt agent
-
-For local runs, copy the example env file and add your Groq and email settings:
+Copy the example file:
 
 ```bash
 cp .env.example .env
 ```
 
-Then set:
+Then fill in these values:
 
 ```bash
 GROQ_API_KEY=your-groq-api-key
@@ -223,170 +224,144 @@ EMAIL_APP_PASSWORD=your-gmail-app-password
 EMAIL_FROM_NAME=Property Predictor
 ```
 
-For Gmail, `EMAIL_APP_PASSWORD` is an app password from Google account security settings, not your normal Gmail password. For Streamlit Cloud, add the same values in app secrets. If no Groq key is configured, the input agent automatically uses the local rule-based fallback so the app can still be demoed.
+For Gmail, `EMAIL_APP_PASSWORD` must be a Gmail app password, not the normal Gmail login password.
 
-### 5. Re-train models (optional)
+For Streamlit secrets, copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` locally or add the same key-value pairs in Streamlit Cloud secrets.
 
-Use your training notebook/script to retrain, then export artifacts with these exact names in `models/`:
+### 4. Run The App
 
-- `xgb_regression_model.joblib`
-- `regression_scaler.joblib`
-- `xgb_classification_model.joblib`
-- `classification_scaler.joblib`
+```bash
+streamlit run app/streamlit_app.py
+```
 
----
+The local app opens at:
 
-## Data Processing Pipeline
-
-### 1. Data Loading and Initial Inspection
-
-- Loaded `real_estate_raw.csv` into a pandas DataFrame
-- Checked dataset shape and sample rows to verify schema
-
-### 2. Data Preprocessing
-
-- **Handling Missing Values**
-  - Numeric columns were imputed with median values
-- **Categorical Encoding**
-  - `Furnishing_Status` ordinal mapping:
-    - `Unfurnished -> 0`
-    - `Semi-furnished -> 1`
-    - `Fully-furnished -> 2`
-  - `Neighborhood` one-hot encoded with drop-first strategy
-- **Outlier Treatment**
-  - IQR-based clipping applied to numeric columns excluding:
-    - `Current_Market_Price`
-    - `Investment_Grade`
-- **Saving Cleaned Data**
-  - Exported to `data/processed/real_estate_clean.csv`
-
-### 3. XGBoost Regression (Current_Market_Price)
-
-- **Target:** `Current_Market_Price`
-- **Features:** all engineered predictors except `Investment_Grade`
-- **Split:** 80% train / 20% test (`random_state=42`)
-- **Scaling:** `MinMaxScaler`
-- **Model:** `XGBRegressor(n_estimators=200, learning_rate=0.05, max_depth=5)`
-- **Evaluation:** R2, MAE, RMSE
-
-### 4. XGBoost Classification (Investment_Grade)
-
-- **Target:** `Investment_Grade`
-- **Features:** all engineered predictors excluding both:
-  - `Investment_Grade`
-  - `Current_Market_Price` (to prevent leakage)
-- **Split:** 80% train / 20% test (`random_state=42`)
-- **Scaling:** `MinMaxScaler`
-- **Model:** `XGBClassifier(n_estimators=200, learning_rate=0.05, max_depth=4, eval_metric='mlogloss')`
-- **Evaluation:** Accuracy, classification report, confusion matrix
-
-### 5. Model Saving and Inference Readiness
-
-- Saved model and scaler artifacts using `joblib`
-- Artifacts are directly consumed by `app/streamlit_app.py`
+```text
+http://localhost:8501
+```
 
 ---
 
-## Models
+## Environment Variables
 
-### Regression Model
+| Variable | Required For | Purpose |
+| --- | --- | --- |
+| `GROQ_API_KEY` | Prompt extraction and explanation | Authenticates Groq API requests. |
+| `GROQ_MODEL` | Prompt extraction and explanation | Selects the Groq model, defaulting to `llama-3.3-70b-versatile`. |
+| `GROQ_API_URL` | Optional | Overrides the Groq chat completions endpoint. |
+| `EMAIL_SMTP_HOST` | Email notification | SMTP host, usually `smtp.gmail.com`. |
+| `EMAIL_SMTP_PORT` | Email notification | SMTP port, usually `587`. |
+| `EMAIL_SENDER` | Email notification | Sender email address. |
+| `EMAIL_APP_PASSWORD` | Email notification | Sender email app password. |
+| `EMAIL_FROM_NAME` | Email notification | Display name shown in the email. |
 
-- **Algorithm:** XGBoost Regressor
-- **Goal:** Predict market price from property attributes
-- **Artifacts:**
-  - `models/xgb_regression_model.joblib`
-  - `models/regression_scaler.joblib`
+Local `.env` files and `.streamlit/secrets.toml` are ignored by Git so API keys and email credentials do not get committed.
 
-### Classification Model
+---
 
-- **Algorithm:** XGBoost Classifier
-- **Goal:** Predict investment grade class (0/1/2)
-- **Artifacts:**
-  - `models/xgb_classification_model.joblib`
-  - `models/classification_scaler.joblib`
+## Model Inputs
+
+The model expects these raw user-facing fields:
+
+| Field | Meaning |
+| --- | --- |
+| `Total_Square_Footage` | Total property area in square feet. |
+| `Bedrooms` | Number of bedrooms. |
+| `Bathrooms` | Number of bathrooms. |
+| `Age_of_Property` | Property age in years. |
+| `Floor_Number` | Floor number. |
+| `Furnishing_Status` | `Unfurnished`, `Semi-furnished`, or `Fully-furnished`. |
+| `Distance_to_City_Center_km` | Distance from city center in kilometers. |
+| `Proximity_to_Public_Transport_km` | Distance from public transport in kilometers. |
+| `Crime_Index` | Crime index for the area. |
+| `Air_Quality_Index` | Air quality index for the area. |
+| `Neighborhood_Growth_Rate_%` | Neighborhood growth rate percentage. |
+| `Price_per_SqFt` | Price per square foot. |
+| `Annual_Property_Tax` | Annual property tax amount. |
+| `Estimated_Rental_Yield_%` | Estimated rental yield percentage. |
+| `Neighborhood` | One of `Downtown`, `IT Hub`, `Industrial`, `Residential`, or `Suburban`. |
+
+---
+
+## Model Training Summary
+
+The training work is stored in `notebooks/training_colab.ipynb`, with cleaned data in `data/processed/real_estate_clean.csv`.
+
+Training steps:
+
+1. Load `data/raw/real_estate_raw.csv`.
+2. Handle missing numeric values using median imputation.
+3. Encode `Furnishing_Status` as ordinal values.
+4. One-hot encode `Neighborhood`.
+5. Clip outliers using the IQR method.
+6. Train an XGBoost regression model for `Current_Market_Price`.
+7. Train an XGBoost classification model for `Investment_Grade`.
+8. Save models and scalers into `models/` using `joblib`.
+
+### Saved Model Artifacts
+
+| Artifact | Purpose |
+| --- | --- |
+| `models/xgb_regression_model.joblib` | Predicts current market price. |
+| `models/regression_scaler.joblib` | Scales regression features. |
+| `models/xgb_classification_model.joblib` | Predicts investment grade. |
+| `models/classification_scaler.joblib` | Scales classification features. |
 
 ---
 
 ## Results
 
-Metrics below are from a previous training run of this pipeline:
+Metrics from the recorded training run:
 
-| Metric          | Regression       | Classification |
-| --------------- | ---------------- | -------------- |
-| **R2 Score**    | **0.9483**       | -              |
-| **MAE**         | **550,850.82**   | -              |
-| **RMSE**        | **1,010,636.01** | -              |
-| **Accuracy**    | -                | **97.50%**     |
-| **Weighted F1** | -                | **0.97**       |
-
-> Note: Classification report in the notebook shows strong precision/recall across all three classes, with relatively lower recall on class `2` compared to classes `0` and `1`.
+| Metric | Value |
+| --- | --- |
+| Regression R2 Score | **0.9483** |
+| Regression MAE | **Rs 550,851** |
+| Regression RMSE | **Rs 1,010,636** |
+| Classification Accuracy | **97.50%** |
+| Classification Weighted F1 | **0.97** |
 
 ---
 
-## Application
+## Main Libraries
 
-The Streamlit application (`app/streamlit_app.py`) includes four clear agent files:
-
-### 1. Input Agent
-
-- `app/input_agent.py`
-- Extracts user prompt fields using Groq
-- Fills missing values with training-data defaults
-
-### 2. Prediction Agent
-
-- `app/prediction_agent.py`
-- Builds model-ready features
-- Runs the saved XGBoost regression and classification models
-
-### 3. Explanation Agent
-
-- `app/explanation_agent.py`
-- Explains the prediction in simple language using Groq
-
-### 4. Notification Agent
-
-- `app/notification_agent.py`
-- Sends single prediction results or CSV batch outputs by email
-
-The UI still supports:
-
-- CSV upload for bulk inference
-- Manual property input form
-- Natural-language prompt input
-- Downloadable predictions CSV
+| Library | Role In This Project |
+| --- | --- |
+| Streamlit | Builds the user interface, tabs, dialogs, upload flow, and email forms. |
+| pandas | Loads CSV data, validates uploaded files, builds feature rows, and prepares output CSVs. |
+| scikit-learn | Provides saved scalers used before model prediction. |
+| XGBoost | Provides the regression and classification models. |
+| joblib | Loads saved model and scaler artifacts. |
+| urllib | Sends Groq API requests without adding an extra API client dependency. |
+| smtplib / email | Sends formatted prediction emails through SMTP. |
 
 ---
 
-## Inference Pipeline (Code-Aligned)
+## Streamlit Pages
 
-The deployed inference flow uses these agent functions:
-
-1. `assemble_agent_fields(...)` in `input_agent.py`
-2. `predict_single(...)` / `run_predict(...)` in `prediction_agent.py`
-3. `generate_explanation(...)` in `explanation_agent.py`
-4. `send_prediction_email(...)` / `send_csv_predictions_email(...)` in `notification_agent.py`
-
-Artifact constants used by inference:
-
-- `REG_MODEL_PATH  -> models/xgb_regression_model.joblib`
-- `REG_SCALER_PATH -> models/regression_scaler.joblib`
-- `CLF_MODEL_PATH  -> models/xgb_classification_model.joblib`
-- `CLF_SCALER_PATH -> models/classification_scaler.joblib`
+| Page | What It Does |
+| --- | --- |
+| Prompt Agent | Runs the full agentic flow: prompt extraction, review, prediction, explanation, and email. |
+| CSV Upload | Runs batch prediction from a CSV and can email the output file. |
+| Manual Input | Lets the user directly enter values, then predicts, explains, and emails the result. |
+| About | Summarizes the agentic workflow, models, metrics, and project files. |
 
 ---
 
 ## Limitations
 
-- The model behavior depends on the training data distribution in the provided dataset.
-- Investment grade labels are class IDs (`0/1/2`), so business meaning should be mapped explicitly in production.
-- Extreme real-world market shifts may require frequent retraining.
+- Predictions depend on the dataset used during training.
+- Prompt extraction quality depends on the Groq response and the clarity of the user's text.
+- The local rule parser is only a fallback when `GROQ_API_KEY` is missing.
+- The explanation agent gives a human-readable interpretation, not exact feature-importance values.
+- Email sending requires correct SMTP credentials and may require app-password setup for Gmail.
 
 ---
 
 ## Future Enhancements
 
-- Add model monitoring in the hosted Streamlit app (input drift, prediction drift, and confidence trends) with periodic retraining triggers.
-- Expand feature set with location-intelligence signals (pincode/zone index, nearby amenities, transport score) to improve valuation robustness.
-- Introduce explainability in predictions (feature contribution view for each estimate) so users can understand why a price/grade was predicted.
-- Build an investor advisory layer on top of current outputs that converts predicted price + investment grade into buy/hold/avoid guidance with risk notes.
+- Add SHAP-based feature contribution charts for stronger model explainability.
+- Add input drift monitoring for uploaded CSVs.
+- Add scheduled retraining when new validated property data is available.
+- Add richer email templates for batch summaries.
+- Add validation ranges for all numeric fields to catch unrealistic property values.
