@@ -22,7 +22,7 @@ SOURCE_LABELS = {
 
 
 # Show the common prediction output block used by prompt and manual pages.
-def render_result(result, explanation=None, flow=None, email_key="email"):
+def render_result(result, explanation=None, flow=None, comparables=None, email_key="email"):
     m1, m2, m3 = st.columns(3)
     m1.metric("Predicted Price", f"Rs {result['price']:,.0f}")
     m2.metric("Investment Grade", GRADE_LABELS.get(result["grade"], str(result["grade"])))
@@ -33,15 +33,19 @@ def render_result(result, explanation=None, flow=None, email_key="email"):
     )
     st.dataframe(prob_df, width="stretch", hide_index=True, height=145)
 
+    if comparables:
+        st.markdown("## Comparable Properties from Training Data")
+        st.dataframe(pd.DataFrame(comparables), width="stretch", hide_index=True, height=230)
+
     if explanation:
         st.markdown("## Explanation")
         st.info(explanation)
 
-    render_email_form(result, explanation, flow, email_key)
+    render_email_form(result, explanation, flow, comparables, email_key)
 
 
 # Show the email delivery form handled by the LangGraph notification node.
-def render_email_form(result, explanation, flow, key_prefix):
+def render_email_form(result, explanation, flow, comparables, key_prefix):
     with st.expander("Email this result"):
         recipient = st.text_input("Recipient email", key=f"{key_prefix}_recipient")
         if st.button("Send Email", width="stretch", key=f"{key_prefix}_send"):
@@ -51,6 +55,7 @@ def render_email_form(result, explanation, flow, key_prefix):
                     result,
                     explanation,
                     flow,
+                    comparables,
                     st.secrets,
                 )
             except Exception as exc:
@@ -126,7 +131,7 @@ def page_agent(context):
         reset = st.button("Start Over", width="stretch")
 
     if reset:
-        for key in ["agent_flow", "agent_result", "agent_explanation", "agent_dialog"]:
+        for key in ["agent_flow", "agent_result", "agent_explanation", "agent_comparables", "agent_dialog"]:
             st.session_state.pop(key, None)
         st.rerun()
 
@@ -151,6 +156,7 @@ def page_agent(context):
         st.session_state["agent_dialog"] = "review"
         st.session_state.pop("agent_result", None)
         st.session_state.pop("agent_explanation", None)
+        st.session_state.pop("agent_comparables", None)
 
     flow = st.session_state.get("agent_flow")
     if not flow:
@@ -178,6 +184,7 @@ def page_agent(context):
             st.session_state["agent_result"],
             st.session_state.get("agent_explanation"),
             st.session_state.get("agent_flow"),
+            st.session_state.get("agent_comparables"),
             "agent_email",
         )
 
@@ -216,6 +223,7 @@ def page_agent(context):
                     st.secrets,
                 )
                 st.session_state["agent_result"] = graph_state["result"]
+                st.session_state["agent_comparables"] = graph_state["comparables"]
                 st.session_state["agent_explanation"] = graph_state["explanation"]
                 st.session_state["agent_dialog"] = None
                 st.rerun()
@@ -306,6 +314,7 @@ def page_agent(context):
                 st.secrets,
             )
             st.session_state["agent_result"] = graph_state["result"]
+            st.session_state["agent_comparables"] = graph_state["comparables"]
             st.session_state["agent_explanation"] = graph_state["explanation"]
             st.session_state["agent_dialog"] = None
             st.rerun()
@@ -375,7 +384,7 @@ def clear_agent_edit_keys():
 def clear_stale_fallback_flow(settings):
     flow = st.session_state.get("agent_flow")
     if settings.get("api_key") and flow and flow.get("agent_source") == "Rule parser fallback":
-        for key in ["agent_flow", "agent_result", "agent_explanation", "agent_dialog"]:
+        for key in ["agent_flow", "agent_result", "agent_explanation", "agent_comparables", "agent_dialog"]:
             st.session_state.pop(key, None)
         st.info("Groq key is now loaded. Re-analyze the prompt to use Groq extraction.")
 
@@ -463,6 +472,7 @@ def page_manual(context):
         )
         st.session_state["last_result"] = graph_state["result"]
         st.session_state["last_flow"] = graph_state["flow"]
+        st.session_state["last_comparables"] = graph_state["comparables"]
         st.session_state["last_explanation"] = graph_state["explanation"]
 
     if "last_result" in st.session_state:
@@ -470,6 +480,7 @@ def page_manual(context):
             st.session_state["last_result"],
             st.session_state.get("last_explanation"),
             st.session_state.get("last_flow"),
+            st.session_state.get("last_comparables"),
             "manual_email",
         )
 

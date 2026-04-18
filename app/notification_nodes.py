@@ -154,7 +154,7 @@ def explanation_line_parts(raw_line):
 
 
 # Format a plain-text fallback version of the prediction email.
-def build_prediction_email_text(result, explanation, flow=None):
+def build_prediction_email_text(result, explanation, flow=None, comparables=None):
     grade = GRADE_LABELS.get(result["grade"], str(result["grade"]))
     lines = [
         "Hello,",
@@ -171,6 +171,18 @@ def build_prediction_email_text(result, explanation, flow=None):
         lines.extend(["", "Property Summary:"])
         for row in summary:
             lines.append(f"- {row['field']}: {row['value']} ({row['source']})")
+
+    if comparables:
+        lines.extend(["", "Comparable Properties from Training Data:"])
+        for row in comparables:
+            lines.append(
+                "- "
+                f"{format_value(row['Sqft'])} sqft, "
+                f"{row['Bedrooms']} bedrooms, "
+                f"{row['Neighborhood']}, "
+                f"Rs {format_value(row['Predicted Price (Rs)'])}, "
+                f"{row['Investment Grade']}"
+            )
 
     if explanation:
         lines.extend(["", "Explanation:", clean_markdown(explanation)])
@@ -241,6 +253,43 @@ def property_summary_table(flow):
     """
 
 
+# Build the comparable-properties table for the HTML email.
+def comparable_properties_table(comparables):
+    if not comparables:
+        return ""
+
+    table_rows = ""
+    for row in comparables:
+        table_rows += f"""
+        <tr>
+          <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(format_value(row['Sqft']))}</td>
+          <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(format_value(row['Bedrooms']))}</td>
+          <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(row['Neighborhood'])}</td>
+          <td style="padding:10px;border-bottom:1px solid #eeeeee;">Rs {escape(format_value(row['Predicted Price (Rs)']))}</td>
+          <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(row['Investment Grade'])}</td>
+        </tr>
+        """
+
+    return f"""
+    <h2 style="font-size:18px;margin:26px 0 10px;">Comparable Properties from Training Data</h2>
+    <p style="margin:0 0 12px;color:#555555;">
+      These are similar training examples matched by neighborhood and square footage.
+    </p>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #eeeeee;border-radius:10px;overflow:hidden;">
+      <thead>
+        <tr style="background:#f7f6f3;text-align:left;">
+          <th style="padding:10px;">Sqft</th>
+          <th style="padding:10px;">Bedrooms</th>
+          <th style="padding:10px;">Neighborhood</th>
+          <th style="padding:10px;">Predicted Price</th>
+          <th style="padding:10px;">Grade</th>
+        </tr>
+      </thead>
+      <tbody>{table_rows}</tbody>
+    </table>
+    """
+
+
 # Convert explanation bullets into clean HTML.
 def explanation_html(explanation):
     if not explanation:
@@ -279,7 +328,7 @@ def explanation_html(explanation):
 
 
 # Format a rich HTML email that is easy for users to scan quickly.
-def build_prediction_email_html(result, explanation, flow=None):
+def build_prediction_email_html(result, explanation, flow=None, comparables=None):
     grade = GRADE_LABELS.get(result["grade"], str(result["grade"]))
     return f"""
     <!doctype html>
@@ -308,6 +357,7 @@ def build_prediction_email_html(result, explanation, flow=None):
             </div>
 
             {property_summary_table(flow)}
+            {comparable_properties_table(comparables)}
             {explanation_html(explanation)}
 
             <p style="margin-top:24px;color:#555555;">Thank you,<br><strong>Property Predictor</strong></p>
@@ -319,7 +369,7 @@ def build_prediction_email_html(result, explanation, flow=None):
 
 
 # Send the prediction email through SMTP.
-def send_prediction_email(recipient, result, explanation, flow, settings):
+def send_prediction_email(recipient, result, explanation, flow, comparables, settings):
     if not is_valid_email(recipient):
         raise ValueError("Enter a valid recipient email address.")
     if not settings.get("sender") or not settings.get("password"):
@@ -329,8 +379,8 @@ def send_prediction_email(recipient, result, explanation, flow, settings):
     message["Subject"] = "Your Property Prediction Result"
     message["From"] = formataddr((settings["from_name"], settings["sender"]))
     message["To"] = recipient
-    message.set_content(build_prediction_email_text(result, explanation, flow))
-    message.add_alternative(build_prediction_email_html(result, explanation, flow), subtype="html")
+    message.set_content(build_prediction_email_text(result, explanation, flow, comparables))
+    message.add_alternative(build_prediction_email_html(result, explanation, flow, comparables), subtype="html")
 
     with smtplib.SMTP(settings["host"], settings["port"]) as smtp:
         smtp.starttls()

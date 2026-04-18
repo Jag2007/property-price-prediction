@@ -26,6 +26,52 @@ def load_clean_data() -> pd.DataFrame:
     return pd.read_csv(DATA_PATH)
 
 
+# Return the user-facing neighborhood name from a processed training row.
+def row_neighborhood(row):
+    for neighborhood in NEIGHBORHOODS[1:]:
+        key = f"Neighborhood_{neighborhood}"
+        if key in row and bool(row[key]):
+            return neighborhood
+    return NEIGHBORHOODS[0]
+
+
+# Find nearby training examples that look similar to the confirmed property.
+def find_comparable_properties(df, neighborhood, total_sqft, predicted_price, limit=5):
+    if df.empty or "Current_Market_Price" not in df.columns:
+        return []
+
+    working = df.copy()
+    working["Neighborhood"] = working.apply(row_neighborhood, axis=1)
+    lower_sqft = float(total_sqft) * 0.75
+    upper_sqft = float(total_sqft) * 1.25
+    matches = working[
+        working["Neighborhood"].eq(neighborhood)
+        & working["Total_Square_Footage"].between(lower_sqft, upper_sqft)
+    ].copy()
+
+    if matches.empty:
+        matches = working[working["Total_Square_Footage"].between(lower_sqft, upper_sqft)].copy()
+    if matches.empty:
+        matches = working.copy()
+
+    matches["price_gap"] = (matches["Current_Market_Price"] - float(predicted_price)).abs()
+    matches = matches.sort_values(["price_gap", "Total_Square_Footage"]).head(limit)
+
+    rows = []
+    for _, row in matches.iterrows():
+        grade = int(row.get("Investment_Grade", 0))
+        rows.append(
+            {
+                "Sqft": round(float(row["Total_Square_Footage"]), 0),
+                "Bedrooms": int(round(float(row["Bedrooms"]))),
+                "Neighborhood": row["Neighborhood"],
+                "Predicted Price (Rs)": round(float(row["Current_Market_Price"]), 0),
+                "Investment Grade": GRADE_LABELS.get(grade, str(grade)),
+            }
+        )
+    return rows
+
+
 @st.cache_resource
 # Load model artifacts once and verify both models expect the same feature order.
 def load_artifacts(

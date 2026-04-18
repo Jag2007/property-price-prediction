@@ -10,7 +10,7 @@ from config import RAW_NUMERIC_COLUMNS
 from explanation_nodes import explanation_settings_from, generate_explanation
 from input_nodes import assemble_prompt_fields
 from notification_nodes import email_settings_from, send_csv_predictions_email, send_prediction_email
-from prediction_nodes import predict_one_property, raw_to_feature_frame, run_predict
+from prediction_nodes import find_comparable_properties, predict_one_property, raw_to_feature_frame, run_predict
 
 
 class PropertyWorkflowState(TypedDict, total=False):
@@ -27,6 +27,7 @@ class PropertyWorkflowState(TypedDict, total=False):
     flow: dict[str, Any]
     result: dict[str, Any]
     explanation: str
+    comparables: list[dict[str, Any]]
     recipient: str
     email_sent: bool
     input_df: Any
@@ -82,7 +83,13 @@ def prediction_node(state: PropertyWorkflowState) -> dict[str, Any]:
         flow["neighborhood"],
         state["context"],
     )
-    return {"result": result}
+    comparables = find_comparable_properties(
+        state["context"]["df"],
+        flow["neighborhood"],
+        flow["numeric_inputs"]["Total_Square_Footage"],
+        result["price"],
+    )
+    return {"result": result, "comparables": comparables}
 
 
 # Ask Groq for a short user-facing explanation after prediction.
@@ -146,6 +153,7 @@ def result_email_node(state: PropertyWorkflowState) -> dict[str, Any]:
         state["result"],
         state.get("explanation"),
         state.get("flow"),
+        state.get("comparables"),
         state["email_settings"],
     )
     return {"email_sent": True}
@@ -275,13 +283,14 @@ def run_csv_prediction_graph(input_df, context):
 
 
 # Run the notification node for one property result.
-def run_result_email_graph(recipient, result, explanation, flow, secrets):
+def run_result_email_graph(recipient, result, explanation, flow, comparables, secrets):
     return RESULT_EMAIL_GRAPH.invoke(
         {
             "recipient": recipient,
             "result": result,
             "explanation": explanation,
             "flow": flow,
+            "comparables": comparables,
             "email_settings": email_settings_from(secrets),
         }
     )
