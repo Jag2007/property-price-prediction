@@ -39,6 +39,11 @@ EXPLANATION_KEY_TERMS = (
     "edited",
 )
 
+DISCLAIMER_TEXT = (
+    "This application is a student project for educational purposes only. "
+    "It does not constitute financial, legal, or investment advice."
+)
+
 SOURCE_LABELS = {
     "Groq extracted": "Prompt",
     "Rule parser fallback": "Prompt",
@@ -187,7 +192,7 @@ def build_prediction_email_text(result, explanation, flow=None, comparables=None
     if explanation:
         lines.extend(["", "Explanation:", clean_markdown(explanation)])
 
-    lines.extend(["", "Thank you,", "Property Predictor"])
+    lines.extend(["", "Thank you,", "Property Predictor", "", DISCLAIMER_TEXT])
     return "\n".join(lines)
 
 
@@ -361,6 +366,9 @@ def build_prediction_email_html(result, explanation, flow=None, comparables=None
             {explanation_html(explanation)}
 
             <p style="margin-top:24px;color:#555555;">Thank you,<br><strong>Property Predictor</strong></p>
+            <p style="font-size:12px;line-height:1.5;color:#777777;border-top:1px solid #eeeeee;padding-top:12px;margin-top:14px;">
+              {escape(DISCLAIMER_TEXT)}
+            </p>
           </div>
         </div>
       </body>

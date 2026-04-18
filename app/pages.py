@@ -550,3 +550,9 @@ and <strong>investment grade</strong> using XGBoost, with a Groq-powered prompt 
   styles.py          # visual styling""",
         language="text",
     )
+
+    st.markdown("---")
+    st.caption(
+        "This application is a student project for educational purposes only. "
+        "It does not constitute financial, legal, or investment advice."
+    )
