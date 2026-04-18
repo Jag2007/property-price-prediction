@@ -171,6 +171,8 @@ CSV prediction emails attach the generated batch prediction CSV.
 
 ```text
 property-price-prediction/
+├── .env.example
+├── .gitignore
 ├── app/
 │   ├── streamlit_app.py
 │   ├── config.py
@@ -181,6 +183,8 @@ property-price-prediction/
 │   ├── notification_nodes.py
 │   ├── pages.py
 │   └── styles.py
+├── .streamlit/
+│   └── config.toml
 │
 ├── data/
 │   ├── raw/
@@ -232,11 +236,18 @@ pip install -r requirements.txt
 
 ### 3. Configure Local Secrets
 
-Create a local `.env` file in the project root and add these values:
+Create a local `.env` file from the safe placeholder template:
+
+```bash
+cp .env.example .env
+```
+
+Then replace the placeholder values:
 
 ```bash
 GROQ_API_KEY=your-groq-api-key
 GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_API_URL=https://api.groq.com/openai/v1/chat/completions
 
 EMAIL_SMTP_HOST=smtp.gmail.com
 EMAIL_SMTP_PORT=587
@@ -344,18 +355,63 @@ Metrics from the recorded training run:
 
 ---
 
-## Main Libraries
+## Tool Deep-Dive
 
 | Library | Role In This Project |
 | --- | --- |
-| Streamlit | Builds the user interface, tabs, dialogs, upload flow, and email forms. |
-| pandas | Loads CSV data, validates uploaded files, builds feature rows, and prepares output CSVs. |
-| scikit-learn | Provides saved scalers used before model prediction. |
-| XGBoost | Provides the regression and classification models. |
-| LangGraph | Orchestrates the input, review, prediction, explanation, CSV, and notification nodes. |
-| joblib | Loads saved model and scaler artifacts. |
-| urllib | Sends Groq API requests without adding an extra API client dependency. |
-| smtplib / email | Sends formatted prediction emails through SMTP. |
+| Streamlit | Builds the complete UI, including navigation, prompt input, review/edit dialogs, CSV upload, prediction display, comparable-property tables, and email forms. |
+| LangGraph | Orchestrates the project as clear nodes: input, review, prediction, explanation, CSV prediction, and notification. This makes the agentic flow easy to explain during evaluation. |
+| Groq API | Powers natural-language prompt extraction and prediction explanations through a fast hosted LLM endpoint. |
+| pandas | Loads CSV data, validates uploaded files, computes defaults, builds feature rows, prepares comparable-property tables, and exports prediction CSVs. |
+| scikit-learn | Provides saved scalers used to transform inference features exactly like training features. |
+| XGBoost | Provides the regression model for price prediction and the classification model for investment-grade prediction. |
+| joblib | Loads saved model and scaler artifacts from the `models/` directory. |
+| urllib | Sends Groq API requests using Python's standard library, avoiding an extra provider SDK dependency. |
+| smtplib / email | Sends formatted result emails and CSV attachments through SMTP. |
+
+---
+
+## Design Choices And Justification
+
+### Why XGBoost For Prediction
+
+The dataset is structured and tabular, with numeric property attributes and encoded categorical features. XGBoost is a strong fit because it captures non-linear relationships between features such as square footage, price per square foot, rental yield, location distance, and neighborhood indicators. It also performs well on medium-sized tabular datasets without requiring deep-learning infrastructure.
+
+### Why LangGraph For Agentic Flow
+
+The project has multiple steps that behave like an agentic workflow: extracting user intent, pausing for human confirmation, running prediction, explaining the result, and optionally sending a notification. LangGraph was chosen because each step can be represented as a named node with a shared state. This makes the workflow easier to debug, demonstrate, and explain in the final report.
+
+### Why Groq And Llama-3.3-70B
+
+Groq was selected for the LLM layer because it provides fast hosted inference and is convenient for student-project demos. The `llama-3.3-70b-versatile` model is used for two tasks: converting natural-language property prompts into structured JSON fields, and generating short user-friendly explanations after prediction. This keeps the ML model deterministic while using the LLM only for language understanding and explanation.
+
+### Why Streamlit For The Interface
+
+Streamlit allows the project to expose the full workflow quickly: prompt input, CSV upload, manual parameters, review popups, prediction metrics, comparable properties, and email delivery. It is also easy to run locally and deploy for review.
+
+### Why SMTP Email Instead Of WhatsApp
+
+Email notification was chosen because it is easier to configure with standard SMTP credentials and does not require paid messaging APIs, phone-number verification, or WhatsApp Business setup. It still demonstrates a complete notification node in the agentic workflow.
+
+### Why A Vector DB / FAISS Was Not Used
+
+A vector database such as FAISS is useful when the data is mostly unstructured text and retrieval depends on semantic similarity. This project uses structured property data with clear columns such as neighborhood, square footage, bedrooms, and price. For comparable-property retrieval, deterministic row-based filtering is more precise and interpretable: the app filters by same neighborhood, keeps square footage within a 25% range, then sorts by price proximity. This is easier to justify in a real-estate setting than embedding-based similarity, where the reason for a match can be less transparent.
+
+---
+
+## Report Writing Notes
+
+This README can be used as the base for the final report. A clean report structure would be:
+
+1. **Problem Statement:** property valuation and investment-grade prediction.
+2. **Dataset And Features:** raw/processed data, numeric features, furnishing encoding, and neighborhood one-hot encoding.
+3. **Model Development:** preprocessing, XGBoost regression, XGBoost classification, and saved artifacts.
+4. **Agentic Workflow:** LangGraph nodes for input, review, prediction, explanation, CSV prediction, and notification.
+5. **User Interface:** Streamlit pages for Prompt Agent, CSV Upload, Manual Input, and About.
+6. **Notification System:** SMTP email with prediction summary, source labels, comparable properties, explanation, and disclaimer.
+7. **Design Justification:** why XGBoost, LangGraph, Groq, Streamlit, SMTP, and deterministic comparable-property retrieval were chosen.
+8. **Key Learnings:** what was learned from combining ML, LLMs, LangGraph, UI design, and notifications.
+9. **Results And Limitations:** model metrics, dataset dependency, prompt extraction limitations, and non-advisory disclaimer.
 
 ---
 
@@ -367,6 +423,16 @@ Metrics from the recorded training run:
 | CSV Upload | Runs batch prediction from a CSV and can email the output file. |
 | Manual Input | Lets the user directly enter values, then predicts, explains, and emails the result. |
 | About | Summarizes the agentic workflow, models, metrics, and project files. |
+
+---
+
+## Key Learnings
+
+- **LLMs are most useful around the ML model, not as a replacement for it:** Groq handles language extraction and explanation, while XGBoost remains responsible for numeric prediction.
+- **Human review improves trust:** the Prompt Agent pauses before prediction so users can inspect defaults and edit values before the model runs.
+- **Structured data should use structured retrieval:** comparable properties are found through clear filters instead of semantic vector similarity, making the result easier to explain.
+- **Node-based design improves clarity:** LangGraph separates input, review, prediction, explanation, CSV prediction, and notification into understandable workflow blocks.
+- **Deployment needs secret hygiene:** `.env.example` documents required keys, while real API keys and email credentials stay out of version control.
 
 ---
 
