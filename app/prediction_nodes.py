@@ -1,6 +1,6 @@
 # Prediction Nodes
 # These helpers convert confirmed property fields into the feature schema used during training.
-# They load the saved scalers and XGBoost models, then predict price, investment grade, and confidence.
+# They load the saved scalers and XGBoost models, then predict price, advisory class, and confidence.
 
 import joblib
 import pandas as pd
@@ -66,7 +66,7 @@ def find_comparable_properties(df, neighborhood, total_sqft, predicted_price, li
                 "Bedrooms": int(round(float(row["Bedrooms"]))),
                 "Neighborhood": row["Neighborhood"],
                 "Predicted Price (Rs)": round(float(row["Current_Market_Price"]), 0),
-                "Investment Grade": GRADE_LABELS.get(grade, str(grade)),
+                "Advisory Recommendation": GRADE_LABELS.get(grade, str(grade)),
             }
         )
     return rows

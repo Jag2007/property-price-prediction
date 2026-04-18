@@ -6,7 +6,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.54.0-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![XGBoost](https://img.shields.io/badge/XGBoost-3.2.0-0F9D58?style=flat-square)](https://xgboost.readthedocs.io/)
 
-This project predicts property market price and investment grade using saved XGBoost models. It also adds a LangGraph-based agentic layer where Groq converts natural-language property descriptions into model-ready fields, explains the prediction, and sends the final result by email.
+This project predicts property market price and an advisory recommendation using saved XGBoost models. It also adds a LangGraph-based agentic layer where Groq converts natural-language property descriptions into model-ready fields, explains the prediction with guardrails, and can send the final result by email.
 
 Hosted Streamlit URL: <https://property-price-prediction-real-estate.streamlit.app/>
 
@@ -17,7 +17,7 @@ Hosted Streamlit URL: <https://property-price-prediction-real-estate.streamlit.a
 The application answers two real-estate questions:
 
 1. What is the estimated **current market price** of the property?
-2. What is the predicted **investment grade** of the property?
+2. What is the predicted **advisory recommendation** of the property?
 
 The current project has two connected parts:
 
@@ -42,12 +42,14 @@ The app supports three input modes:
 
 The application is orchestrated by `app/property_graph.py`, which connects the workflow as LangGraph nodes:
 
+For the detailed agent documentation, state evolution, guardrails, and edge-case handling, see [`agent_workflow.md`](agent_workflow.md).
+
 | Node | File | Responsibility |
 | --- | --- | --- |
 | Input Node | `app/input_nodes.py` | Extracts property fields from a user prompt using Groq and fills missing fields with defaults. |
 | Review Node | `app/property_graph.py` | Marks prompt extraction as ready for the Streamlit human-review popup. |
 | Prediction Node | `app/prediction_nodes.py` | Loads the saved model artifacts, builds model-ready features, and predicts price/grade/confidence. |
-| Explanation Node | `app/explanation_nodes.py` | Uses Groq to generate a short, simple explanation for the prediction. |
+| Explanation Node | `app/explanation_nodes.py` | Uses a grounded Groq prompt to generate a short, constrained explanation for the prediction. |
 | Notification Node | `app/notification_nodes.py` | Formats prediction results and sends single-result or CSV-result emails through SMTP. |
 | CSV Prediction Node | `app/property_graph.py` | Runs batch predictions for uploaded CSV files. |
 
@@ -61,9 +63,9 @@ flowchart TD
 
     PromptPage --> InputNode["Input Node<br/>Groq extracts fields"]
     InputNode --> ReviewNode["Review Node<br/>Confirm or edit values"]
-    ReviewNode --> PredictionNode["Prediction Node<br/>XGBoost price and grade"]
-    PredictionNode --> ExplanationNode["Explanation Node<br/>Groq explains result"]
-    ExplanationNode --> ResultUI["Prediction shown in UI"]
+    ReviewNode --> PredictionNode["Prediction Node<br/>XGBoost price and recommendation"]
+    PredictionNode --> ExplanationNode["Explanation Node<br/>Grounded Groq explanation"]
+    ExplanationNode --> ResultUI["Advisory report shown in UI"]
     ResultUI --> NotificationNode["Notification Node<br/>Email result"]
 
     ManualPage --> ManualInputNode["Manual Input Node<br/>Wrap form values"]
@@ -76,7 +78,7 @@ flowchart TD
 
 The graph has three entry paths:
 
-- **Prompt Agent path:** uses Groq to extract fields, pauses for user review, predicts with XGBoost, generates a Groq explanation, and can email the final result.
+- **Prompt Agent path:** uses Groq to extract fields, pauses for user review, predicts with XGBoost, generates a grounded Groq explanation, and can email the final result.
 - **Manual Parameters path:** skips prompt extraction because values are already structured, then reuses the same prediction, explanation, and email nodes.
 - **CSV Upload path:** runs a batch prediction node for all rows and can email the generated CSV attachment.
 
@@ -141,14 +143,23 @@ The app then:
 
 1. scales the feature row,
 2. predicts market price with `XGBRegressor`,
-3. predicts investment grade with `XGBClassifier`,
+3. predicts advisory class with `XGBClassifier`,
 4. calculates confidence from the highest class probability.
 
 ### 6. Explanation Generation
 
-The Explanation Node calls `app/explanation_nodes.py` and sends the confirmed property inputs plus model output to Groq. Groq returns 3 to 5 short bullet points explaining likely reasons for the prediction in simple language.
+The Explanation Node calls `app/explanation_nodes.py` and sends the confirmed property inputs, model output, confidence, and comparable properties to Groq. Groq returns exactly four short bullets: **Summary**, **Market Context**, **Recommendation**, and **Risk Warning**.
 
 The explanation is shown in the UI and included in the email report.
+
+### Prompting Guardrails To Reduce Hallucinations
+
+The project explicitly uses these anti-hallucination strategies:
+
+- **Grounding:** the explanation prompt includes only confirmed inputs, predicted price, advisory class, confidence, and comparable rows from the training data.
+- **Self-check instruction:** Groq is told to say "Based on the model output" when a claim is uncertain and not to present likely reasons as exact feature importance.
+- **Output constraint:** Groq must return exactly four labeled bullets, which keeps the response structured and prevents unsupported extra content.
+- **Fallback behavior:** if Groq explanation fails, the app shows a deterministic local explanation instead of breaking the prediction page.
 
 ### 7. Notification
 
@@ -157,7 +168,7 @@ The Notification Node calls `app/notification_nodes.py` and sends results by ema
 Single prediction emails include:
 
 - predicted price,
-- investment grade,
+- advisory recommendation,
 - confidence,
 - property summary,
 - source labels showing Prompt / Default / Edited,
@@ -173,6 +184,7 @@ CSV prediction emails attach the generated batch prediction CSV.
 property-price-prediction/
 ├── .env.example
 ├── .gitignore
+├── agent_workflow.md
 ├── app/
 │   ├── streamlit_app.py
 │   ├── config.py
@@ -336,8 +348,21 @@ Training steps:
 | --- | --- |
 | `models/xgb_regression_model.joblib` | Predicts current market price. |
 | `models/regression_scaler.joblib` | Scales regression features. |
-| `models/xgb_classification_model.joblib` | Predicts investment grade. |
+| `models/xgb_classification_model.joblib` | Predicts advisory class `0 / 1 / 2`. |
 | `models/classification_scaler.joblib` | Scales classification features. |
+
+### Advisory Class Labels
+
+The classification model still predicts numeric classes, but the UI and email
+show them as clear advisory labels:
+
+| Model Class | UI Label | Meaning |
+| --- | --- | --- |
+| `0` | Avoid | Weakest class in the trained model output. |
+| `1` | Hold | Moderate class; review the details carefully. |
+| `2` | Buy | Strongest class in the trained model output. |
+
+These labels are used for project explanation only and are not professional investment advice.
 
 ---
 
@@ -361,7 +386,7 @@ Metrics from the recorded training run:
 | --- | --- |
 | Streamlit | Builds the complete UI, including navigation, prompt input, review/edit dialogs, CSV upload, prediction display, comparable-property tables, and email forms. |
 | LangGraph | Orchestrates the project as clear nodes: input, review, prediction, explanation, CSV prediction, and notification. This makes the agentic flow easy to explain during evaluation. |
-| Groq API | Powers natural-language prompt extraction and prediction explanations through a fast hosted LLM endpoint. |
+| Groq API | Powers natural-language prompt extraction and grounded prediction explanations through a fast hosted LLM endpoint. |
 | pandas | Loads CSV data, validates uploaded files, computes defaults, builds feature rows, prepares comparable-property tables, and exports prediction CSVs. |
 | scikit-learn | Provides saved scalers used to transform inference features exactly like training features. |
 | XGBoost | Provides the regression model for price prediction and the classification model for investment-grade prediction. |
@@ -379,11 +404,11 @@ The dataset is structured and tabular, with numeric property attributes and enco
 
 ### Why LangGraph For Agentic Flow
 
-The project has multiple steps that behave like an agentic workflow: extracting user intent, pausing for human confirmation, running prediction, explaining the result, and optionally sending a notification. LangGraph was chosen because each step can be represented as a named node with a shared state. This makes the workflow easier to debug, demonstrate, and explain in the final report.
+The project has multiple steps that behave like an agentic workflow: extracting user intent, pausing for human confirmation, running prediction, explaining the result with guardrails, and optionally sending a notification. LangGraph was chosen because each step can be represented as a named node with a shared state. This makes the workflow easier to debug, demonstrate, and explain in the final report.
 
 ### Why Groq And Llama-3.3-70B
 
-Groq was selected for the LLM layer because it provides fast hosted inference and is convenient for student-project demos. The `llama-3.3-70b-versatile` model is used for two tasks: converting natural-language property prompts into structured JSON fields, and generating short user-friendly explanations after prediction. This keeps the ML model deterministic while using the LLM only for language understanding and explanation.
+Groq was selected for the LLM layer because it provides fast hosted inference and is convenient for student-project demos. The `llama-3.3-70b-versatile` model is used for two tasks: converting natural-language property prompts into structured JSON fields, and generating short grounded explanations after prediction. This keeps the ML model deterministic while using the LLM only for language understanding and explanation.
 
 ### Why Streamlit For The Interface
 

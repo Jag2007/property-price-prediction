@@ -12,7 +12,18 @@ HOSTED_APP_URL = "https://property-price-prediction-real-estate.streamlit.app/"
 FURNISH_MAP = {"Unfurnished": 0, "Semi-furnished": 1, "Fully-furnished": 2}
 NEIGHBORHOODS = ["Downtown", "IT Hub", "Industrial", "Residential", "Suburban"]
 INT_COLUMNS = {"Bedrooms", "Bathrooms", "Age_of_Property", "Floor_Number"}
-GRADE_LABELS = {0: "0 - Low", 1: "1 - Medium", 2: "2 - High"}
+GRADE_LABELS = {0: "0 - Avoid", 1: "1 - Hold", 2: "2 - Buy"}
+ADVISORY_LABELS = {0: "Avoid", 1: "Hold", 2: "Buy"}
+ADVISORY_DESCRIPTIONS = {
+    0: "The model sees this as the weakest investment class. Treat it as high risk unless other real-world checks strongly support it.",
+    1: "The model sees this as a moderate investment class. Review the details before deciding because the result is not clearly negative or positive.",
+    2: "The model sees this as the strongest investment class. It looks favorable in the training-data pattern, but still needs real-world verification.",
+}
+ADVISORY_COLORS = {
+    0: {"text": "#9F1D1D", "background": "#FFF0F0", "border": "#D92D20"},
+    1: {"text": "#8A5B00", "background": "#FFF7E6", "border": "#D99A00"},
+    2: {"text": "#176B3A", "background": "#ECFDF3", "border": "#12B76A"},
+}
 
 FEATURE_COLUMNS_FALLBACK = [
     "Total_Square_Footage",

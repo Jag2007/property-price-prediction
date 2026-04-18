@@ -6,7 +6,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from config import RAW_NUMERIC_COLUMNS
+from config import GRADE_LABELS, RAW_NUMERIC_COLUMNS
 from explanation_nodes import explanation_settings_from, generate_explanation
 from input_nodes import assemble_prompt_fields
 from notification_nodes import email_settings_from, send_csv_predictions_email, send_prediction_email
@@ -98,6 +98,7 @@ def explanation_node(state: PropertyWorkflowState) -> dict[str, Any]:
         state["flow"],
         state["result"],
         state["explanation_settings"],
+        state.get("comparables"),
     )
     return {"explanation": explanation}
 
@@ -139,9 +140,12 @@ def csv_prediction_node(state: PropertyWorkflowState) -> dict[str, Any]:
 
     output_df = input_df.copy()
     output_df["Predicted_Price_INR"] = prices
-    output_df["Predicted_Investment_Grade"] = grades
+    output_df["Predicted_Advisory_Class"] = grades
+    output_df["Predicted_Advisory_Recommendation"] = [
+        GRADE_LABELS.get(int(grade), str(int(grade))) for grade in grades
+    ]
     for index in range(probs.shape[1]):
-        output_df[f"Grade_{index}_Probability"] = probs[:, index]
+        output_df[f"Advisory_Class_{index}_Probability"] = probs[:, index]
 
     return {"mode": "csv", "output_df": output_df}
 

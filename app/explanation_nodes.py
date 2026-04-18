@@ -6,7 +6,16 @@ import json
 import urllib.error
 import urllib.request
 
-from config import GRADE_LABELS, GROQ_API_URL, GROQ_MODEL, LABELS, RAW_NUMERIC_COLUMNS, config_value
+from config import (
+    ADVISORY_DESCRIPTIONS,
+    ADVISORY_LABELS,
+    GRADE_LABELS,
+    GROQ_API_URL,
+    GROQ_MODEL,
+    LABELS,
+    RAW_NUMERIC_COLUMNS,
+    config_value,
+)
 
 
 # Return the Groq settings used by the explanation step.
@@ -30,24 +39,48 @@ def summarize_inputs(flow):
     return summary
 
 
-# Ask Groq for a short explanation of the prediction.
-def explain_with_groq(flow, result, settings):
-    prompt = {
+# Build a grounded JSON prompt so the LLM can explain only confirmed facts.
+def build_grounded_explanation_context(flow, result, comparables=None):
+    grade = int(result["grade"])
+    return {
         "property_inputs": summarize_inputs(flow),
-        "prediction": {
+        "model_output": {
             "predicted_price": round(result["price"], 2),
-            "investment_grade": GRADE_LABELS.get(result["grade"], str(result["grade"])),
+            "raw_grade_class": grade,
+            "advisory_recommendation": ADVISORY_LABELS.get(grade, str(grade)),
+            "advisory_display": GRADE_LABELS.get(grade, str(grade)),
+            "advisory_meaning": ADVISORY_DESCRIPTIONS.get(grade, ""),
             "confidence": round(result["confidence"], 4),
         },
+        "comparable_properties": comparables or [],
+        "source_rules": {
+            "Prompt": "Value extracted from the user's prompt.",
+            "Default": "Value filled from training-data defaults because the user did not provide it.",
+            "Edited": "Value changed by the user before prediction.",
+        },
+        "allowed_claims": [
+            "Use only the JSON values in this request.",
+            "Mention comparable properties only when they are present in comparable_properties.",
+            "Describe likely reasons, not exact feature importance.",
+        ],
     }
+
+
+# Ask Groq for a constrained explanation of the prediction.
+def explain_with_groq(flow, result, settings, comparables=None):
+    prompt = build_grounded_explanation_context(flow, result, comparables)
     system_prompt = (
-        "You explain real-estate ML predictions for a student project. "
-        "Use 3 to 5 short bullet points. "
-        "Do not claim exact model feature importance. Explain likely reasons using the provided inputs."
+        "You are the Explanation Node for a student real-estate ML project. "
+        "Use only the JSON facts provided by the user message. Do not invent market trends, legal advice, "
+        "financial advice, exact feature importance, or facts from outside the JSON. "
+        "If a claim is uncertain, write 'Based on the model output' instead of stating it as fact. "
+        "Respond with exactly four bullets and these bold labels only: "
+        "**Summary:**, **Market Context:**, **Recommendation:**, **Risk Warning:**. "
+        "Keep each bullet simple and under 35 words."
     )
     payload = {
         "model": settings["model"],
-        "temperature": 0.2,
+        "temperature": 0.1,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(prompt)},
@@ -75,13 +108,25 @@ def explain_with_groq(flow, result, settings):
     return body["choices"][0]["message"]["content"].strip()
 
 
-# Return either a Groq explanation or a clear fallback explanation.
-def generate_explanation(flow, result, settings):
-    if settings.get("api_key"):
-        return explain_with_groq(flow, result, settings)
-
-    grade = GRADE_LABELS.get(result["grade"], str(result["grade"]))
+# Build a deterministic explanation when Groq is unavailable or the request fails.
+def fallback_explanation(result, reason):
+    grade = int(result["grade"])
+    display_grade = GRADE_LABELS.get(grade, str(grade))
+    recommendation = ADVISORY_LABELS.get(grade, str(grade))
     return (
-        f"The model predicts a price of Rs {result['price']:,.0f} and an investment grade of {grade}. "
-        "This explanation is generated locally because GROQ_API_KEY is not configured."
+        f"- **Summary:** Based on the model output, the predicted price is Rs {result['price']:,.0f} with {result['confidence']:.1%} confidence.\n"
+        f"- **Market Context:** The advisory class is {display_grade}, using the trained tabular model and confirmed property values.\n"
+        f"- **Recommendation:** Treat this as **{recommendation}** in the project advisory context, then verify with real market research.\n"
+        f"- **Risk Warning:** Explanation fallback used because {reason}. This is educational output, not financial advice."
     )
+
+
+# Return either a grounded Groq explanation or a clear fallback explanation.
+def generate_explanation(flow, result, settings, comparables=None):
+    if not settings.get("api_key"):
+        return fallback_explanation(result, "GROQ_API_KEY is not configured")
+
+    try:
+        return explain_with_groq(flow, result, settings, comparables)
+    except Exception as exc:
+        return fallback_explanation(result, f"Groq explanation failed: {exc}")

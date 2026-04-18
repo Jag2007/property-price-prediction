@@ -44,6 +44,19 @@ def extract_number(text, patterns):
     return None
 
 
+# Convert a Groq-returned value into a float without crashing on light formatting.
+def coerce_numeric_value(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    match = re.search(r"-?\d+(?:,\d{3})*(?:\.\d+)?", str(value))
+    if not match:
+        return None
+    return float(match.group(0).replace(",", ""))
+
+
 # Small offline fallback used only when GROQ_API_KEY is not configured.
 def parse_prompt_with_rules(prompt):
     text = clean_prompt_text(prompt)
@@ -172,8 +185,13 @@ def parse_prompt_with_api(prompt, settings):
 
     content = body["choices"][0]["message"]["content"]
     extracted = json.loads(content)
-    numeric = extracted.get("numeric_inputs") or {}
-    numeric = {key: float(value) for key, value in numeric.items() if key in RAW_NUMERIC_COLUMNS and value is not None}
+    numeric = {}
+    for key, value in (extracted.get("numeric_inputs") or {}).items():
+        if key not in RAW_NUMERIC_COLUMNS:
+            continue
+        clean_value = coerce_numeric_value(value)
+        if clean_value is not None:
+            numeric[key] = clean_value
 
     furnishing = extracted.get("furnishing_status")
     if furnishing not in FURNISH_MAP:
@@ -184,6 +202,27 @@ def parse_prompt_with_api(prompt, settings):
         neighborhood = None
 
     return numeric, furnishing, neighborhood
+
+
+# Explain weak prompt extraction instead of silently predicting from only defaults.
+def extraction_warning(found_count, source_label, existing_warning):
+    warnings = []
+    if existing_warning:
+        warnings.append(existing_warning)
+
+    if found_count == 0:
+        warnings.append(
+            "No clear property values were detected. The review table is mostly training-data defaults, so edit values before prediction."
+        )
+    elif found_count < 4:
+        warnings.append(
+            f"Only {found_count} property value(s) were detected. Missing values were filled with training-data defaults."
+        )
+
+    if source_label == "Groq extracted" and found_count == 0:
+        warnings.append("This may be a question or unrelated text rather than a property description.")
+
+    return " ".join(warnings) if warnings else None
 
 
 # Use Groq when a key exists; otherwise use the local fallback parser.
@@ -199,6 +238,8 @@ def parse_prompt(prompt, settings):
 # Merge extracted prompt values with defaults for fields the user did not mention.
 def assemble_prompt_fields(prompt, defaults, default_furnishing, default_neighborhood, settings):
     parsed_numeric, parsed_furnishing, parsed_neighborhood, source_label, warning = parse_prompt(prompt, settings)
+    found_count = len(parsed_numeric) + int(bool(parsed_furnishing)) + int(bool(parsed_neighborhood))
+    warning = extraction_warning(found_count, source_label, warning)
     numeric_inputs = {}
     sources = {}
 

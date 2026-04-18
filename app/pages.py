@@ -1,7 +1,18 @@
 import pandas as pd
 import streamlit as st
 
-from config import FURNISH_MAP, GRADE_LABELS, INT_COLUMNS, LABELS, NEIGHBORHOODS, PROMPT_EXAMPLE, RAW_NUMERIC_COLUMNS
+from config import (
+    ADVISORY_COLORS,
+    ADVISORY_DESCRIPTIONS,
+    ADVISORY_LABELS,
+    FURNISH_MAP,
+    GRADE_LABELS,
+    INT_COLUMNS,
+    LABELS,
+    NEIGHBORHOODS,
+    PROMPT_EXAMPLE,
+    RAW_NUMERIC_COLUMNS,
+)
 from input_nodes import input_settings_from, review_rows
 from property_graph import (
     csv_column_status,
@@ -25,23 +36,65 @@ SOURCE_LABELS = {
 def render_result(result, explanation=None, flow=None, comparables=None, email_key="email"):
     m1, m2, m3 = st.columns(3)
     m1.metric("Predicted Price", f"Rs {result['price']:,.0f}")
-    m2.metric("Investment Grade", GRADE_LABELS.get(result["grade"], str(result["grade"])))
+    with m2:
+        st.markdown(advisory_card_html(result), unsafe_allow_html=True)
     m3.metric("Confidence", f"{result['confidence']:.1%}")
 
     prob_df = pd.DataFrame(
-        [{"Investment Grade": grade, "Probability": f"{prob:.1%}"} for grade, prob in result["probabilities"].items()]
+        [{"Advisory Class": grade, "Probability": f"{prob:.1%}"} for grade, prob in result["probabilities"].items()]
     )
     st.dataframe(prob_df, width="stretch", hide_index=True, height=145)
+
+    render_advisory_report(result, explanation, flow)
 
     if comparables:
         st.markdown("## Comparable Properties from Training Data")
         st.dataframe(pd.DataFrame(comparables), width="stretch", hide_index=True, height=230)
 
-    if explanation:
-        st.markdown("## Explanation")
-        st.info(explanation)
-
     render_email_form(result, explanation, flow, comparables, email_key)
+
+
+# Build the colored recommendation card shown beside price and confidence.
+def advisory_card_html(result):
+    grade = int(result["grade"])
+    colors = ADVISORY_COLORS.get(grade, ADVISORY_COLORS[1])
+    label = ADVISORY_LABELS.get(grade, str(grade))
+    display = GRADE_LABELS.get(grade, str(grade))
+    return f"""
+    <div class="advisory-card" style="background:{colors['background']};border-color:{colors['border']};">
+      <div class="advisory-card-label">Advisory Recommendation</div>
+      <div class="advisory-card-value" style="color:{colors['text']} !important;">{label}</div>
+      <div class="advisory-card-sub">Model class: {display}</div>
+    </div>
+    """
+
+
+# Show the complete on-screen advisory report before the optional email feature.
+def render_advisory_report(result, explanation=None, flow=None):
+    grade = int(result["grade"])
+    recommendation = ADVISORY_LABELS.get(grade, str(grade))
+    description = ADVISORY_DESCRIPTIONS.get(grade, "")
+
+    st.markdown("## Advisory Report")
+    st.markdown(
+        f"""
+        <div class="advisory-report">
+          <div class="advisory-report-kicker">Core output</div>
+          <div class="advisory-report-title">{recommendation} recommendation</div>
+          <p>{description}</p>
+          <p><strong>Model evidence:</strong> predicted price is Rs {result['price']:,.0f}, class confidence is {result['confidence']:.1%}, and the class probabilities are shown above.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if flow:
+        st.markdown("## Confirmed Property Details")
+        st.dataframe(compact_audit_frame(flow), width="stretch", hide_index=True, height=230)
+
+    if explanation:
+        st.markdown("## Grounded Explanation")
+        st.info(explanation)
 
 
 # Show the email delivery form handled by the LangGraph notification node.
@@ -491,7 +544,7 @@ def page_about():
     st.markdown(
         """
 <div class='info-card'>End-to-end ML pipeline predicting <strong>property market price</strong>
-and <strong>investment grade</strong> using XGBoost, with a Groq-powered prompt agent in front.</div>
+and an <strong>advisory recommendation</strong> using XGBoost, with a Groq-powered prompt agent in front.</div>
 """,
         unsafe_allow_html=True,
     )
@@ -502,7 +555,7 @@ and <strong>investment grade</strong> using XGBoost, with a Groq-powered prompt 
 1. **Input Node** extracts property fields from a prompt using Groq, then fills missing fields with defaults.
 2. **Review Node** prepares the extracted values for the Streamlit confirmation popup.
 3. **Prediction Node** converts confirmed fields into model features and runs the saved XGBoost models.
-4. **Explanation Node** explains the model output in simple language using Groq.
+4. **Explanation Node** explains the grounded model output in a constrained Groq prompt.
 5. **Notification Node** emails the final prediction and explanation to the recipient entered by the user.
 """
     )
@@ -513,7 +566,7 @@ and <strong>investment grade</strong> using XGBoost, with a Groq-powered prompt 
 | | Regression | Classification |
 |---|---|---|
 | **Algorithm** | XGBRegressor | XGBClassifier |
-| **Target** | Current_Market_Price | Investment_Grade (0 / 1 / 2) |
+| **Target** | Current_Market_Price | Advisory class from Investment_Grade (0 Avoid / 1 Hold / 2 Buy) |
 | **n_estimators** | 200 | 200 |
 | **learning_rate** | 0.05 | 0.05 |
 | **max_depth** | 5 | 4 |

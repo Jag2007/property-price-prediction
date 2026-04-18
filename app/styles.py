@@ -268,6 +268,59 @@ body [data-baseweb="popover"] * { color: #1C1C1C !important; }
     font-weight: 500 !important;
 }
 [data-testid="stMetricDelta"] { display: none !important; }
+.advisory-card {
+    border: 1.5px solid;
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+    min-height: 111px;
+}
+.advisory-card-label {
+    color: #666 !important;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+}
+.advisory-card-value {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 1.55rem;
+    line-height: 1.2;
+    font-weight: 700;
+}
+.advisory-card-sub {
+    color: #555 !important;
+    font-size: 0.78rem;
+    margin-top: 0.3rem;
+    font-weight: 600;
+}
+.advisory-report {
+    background: #FFFFFF;
+    border: 1px solid #E4E2DC;
+    border-left: 4px solid #1C1C1C;
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 0.85rem;
+}
+.advisory-report-kicker {
+    color: #888 !important;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.2rem;
+}
+.advisory-report-title {
+    color: #1C1C1C !important;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+}
+.advisory-report p {
+    margin: 0.35rem 0 0;
+    line-height: 1.5;
+    color: #444 !important;
+}
 [data-testid="stDataFrame"] {
     border: 1px solid #E4E2DC !important;
     border-radius: 10px !important;

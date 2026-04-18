@@ -9,7 +9,7 @@ from email.utils import formataddr
 from html import escape
 from re import fullmatch
 
-from config import GRADE_LABELS, LABELS, RAW_NUMERIC_COLUMNS, config_value
+from config import ADVISORY_LABELS, GRADE_LABELS, LABELS, RAW_NUMERIC_COLUMNS, config_value
 
 EXPLANATION_HIGHLIGHT_STYLE = (
     "background:#fff4d8;color:#6b4700;padding:2px 5px;"
@@ -19,6 +19,11 @@ EXPLANATION_HIGHLIGHT_STYLE = (
 EXPLANATION_KEY_TERMS = (
     "predicted price",
     "investment grade",
+    "advisory recommendation",
+    "recommendation",
+    "avoid",
+    "hold",
+    "buy",
     "confidence",
     "city center",
     "public transport",
@@ -161,13 +166,14 @@ def explanation_line_parts(raw_line):
 # Format a plain-text fallback version of the prediction email.
 def build_prediction_email_text(result, explanation, flow=None, comparables=None):
     grade = GRADE_LABELS.get(result["grade"], str(result["grade"]))
+    recommendation = ADVISORY_LABELS.get(result["grade"], str(result["grade"]))
     lines = [
         "Hello,",
         "",
         "Your property prediction is ready.",
         "",
         f"Predicted Price: Rs {result['price']:,.0f}",
-        f"Investment Grade: {grade}",
+        f"Advisory Recommendation: {recommendation} ({grade})",
         f"Confidence: {result['confidence']:.1%}",
     ]
 
@@ -180,13 +186,14 @@ def build_prediction_email_text(result, explanation, flow=None, comparables=None
     if comparables:
         lines.extend(["", "Comparable Properties from Training Data:"])
         for row in comparables:
+            comparable_grade = row.get("Advisory Recommendation", row.get("Investment Grade", ""))
             lines.append(
                 "- "
                 f"{format_value(row['Sqft'])} sqft, "
                 f"{row['Bedrooms']} bedrooms, "
                 f"{row['Neighborhood']}, "
                 f"Rs {format_value(row['Predicted Price (Rs)'])}, "
-                f"{row['Investment Grade']}"
+                f"{comparable_grade}"
             )
 
     if explanation:
@@ -265,13 +272,14 @@ def comparable_properties_table(comparables):
 
     table_rows = ""
     for row in comparables:
+        comparable_grade = row.get("Advisory Recommendation", row.get("Investment Grade", ""))
         table_rows += f"""
         <tr>
           <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(format_value(row['Sqft']))}</td>
           <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(format_value(row['Bedrooms']))}</td>
           <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(row['Neighborhood'])}</td>
           <td style="padding:10px;border-bottom:1px solid #eeeeee;">Rs {escape(format_value(row['Predicted Price (Rs)']))}</td>
-          <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(row['Investment Grade'])}</td>
+          <td style="padding:10px;border-bottom:1px solid #eeeeee;">{escape(comparable_grade)}</td>
         </tr>
         """
 
@@ -287,7 +295,7 @@ def comparable_properties_table(comparables):
           <th style="padding:10px;">Bedrooms</th>
           <th style="padding:10px;">Neighborhood</th>
           <th style="padding:10px;">Predicted Price</th>
-          <th style="padding:10px;">Grade</th>
+          <th style="padding:10px;">Recommendation</th>
         </tr>
       </thead>
       <tbody>{table_rows}</tbody>
@@ -335,6 +343,7 @@ def explanation_html(explanation):
 # Format a rich HTML email that is easy for users to scan quickly.
 def build_prediction_email_html(result, explanation, flow=None, comparables=None):
     grade = GRADE_LABELS.get(result["grade"], str(result["grade"]))
+    recommendation = ADVISORY_LABELS.get(result["grade"], str(result["grade"]))
     return f"""
     <!doctype html>
     <html>
@@ -346,13 +355,13 @@ def build_prediction_email_html(result, explanation, flow=None, comparables=None
             </div>
             <h1 style="font-size:24px;margin:8px 0 8px;">Your property prediction is ready</h1>
             <p style="margin:0 0 18px;color:#555555;">
-              We used your confirmed property details to estimate price and investment grade.
+              We used your confirmed property details to estimate price and an advisory recommendation.
             </p>
 
             <table style="width:100%;border-collapse:collapse;margin:10px 0 18px;">
               <tr>
                 {metric_card("Predicted Price", f"Rs {result['price']:,.0f}")}
-                {metric_card("Investment Grade", grade)}
+                {metric_card("Advisory Recommendation", f"{recommendation} ({grade})")}
                 {metric_card("Confidence", f"{result['confidence']:.1%}")}
               </tr>
             </table>
