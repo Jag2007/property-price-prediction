@@ -255,12 +255,33 @@ An R\textsuperscript{2} of 0.9483 indicates the regression model explains approx
 \begin{tabular}{ll}
 Accuracy       & \textbf{97.50\%} \\
 Weighted F1    & \textbf{0.97} \\
-Classes        & 0 (Low), 1 (Medium), 2 (High) \\
+Classes        & 0 (Avoid), 1 (Hold), 2 (Buy) \\
 \end{tabular}
 
 \vspace{0.5em}
-The classification model achieves 97.5\% accuracy across three investment grade classes, with a weighted F1 of 0.97 confirming strong performance across all class imbalances.
+The classification model achieves 97.5\% accuracy across three advisory classes, with a weighted F1 of 0.9749 confirming strong performance across class imbalance.
 \end{resultbox}
+
+\begin{table}[H]
+\centering
+\caption{Per-class classification report for the investment-grade classifier}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{Support} \\
+\midrule
+0 --- Avoid & 0.988 & 0.964 & 0.976 & 167 \\
+1 --- Hold  & 0.960 & 0.994 & 0.977 & 171 \\
+2 --- Buy   & 1.000 & 0.909 & 0.952 & 22 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.76\linewidth]{report/figures/milestone_2_confusion_matrix.png}
+  \caption{Confusion matrix for the XGBoost investment-grade classifier on the held-out test set. The model separates Avoid and Hold classes strongly and still identifies the minority Buy class with high precision.}
+  \label{fig:confusion-matrix}
+\end{figure}
 
 \subsection{Key Performance Drivers}
 
@@ -273,6 +294,13 @@ The strongest predictive features identified by model analysis include:
   \item \texttt{Estimated\_Rental\_Yield\_\%} --- directly informs investment-grade classification.
   \item \texttt{Crime\_Index} and \texttt{Air\_Quality\_Index} --- encode neighbourhood quality signals.
 \end{itemize}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\linewidth]{report/figures/milestone_2_feature_importance.png}
+  \caption{Top XGBoost feature importances for the investment-grade classifier. The chart confirms that the advisory class is driven by structured property and market variables rather than language-model assumptions.}
+  \label{fig:feature-importance}
+\end{figure}
 
 \subsection{Saved Artifacts}
 
@@ -339,6 +367,7 @@ class PropertyWorkflowState(TypedDict, total=False):
     result: dict[str, Any]         # price, grade, confidence, probs
     comparables: list[dict]        # comparable properties from CSV
     explanation: str               # Groq-generated explanation
+    report: dict[str, Any]         # structured advisory report
     recipient: str
     email_sent: bool
     input_df: Any                  # uploaded DataFrame
@@ -356,8 +385,8 @@ Six separate \texttt{StateGraph} instances are compiled and cached at module loa
 \textbf{Graph} & \textbf{Node sequence} \\
 \midrule
 \texttt{PROMPT\_REVIEW\_GRAPH}       & START $\to$ input\_node $\to$ review\_node $\to$ END \\
-\texttt{CONFIRMED\_PREDICTION\_GRAPH} & START $\to$ prediction\_node $\to$ explanation\_node $\to$ END \\
-\texttt{MANUAL\_PREDICTION\_GRAPH}   & START $\to$ input\_node $\to$ prediction\_node $\to$ explanation\_node $\to$ END \\
+\texttt{CONFIRMED\_PREDICTION\_GRAPH} & START $\to$ prediction\_node $\to$ explanation\_node $\to$ report\_node $\to$ END \\
+\texttt{MANUAL\_PREDICTION\_GRAPH}   & START $\to$ input\_node $\to$ prediction\_node $\to$ explanation\_node $\to$ report\_node $\to$ END \\
 \texttt{CSV\_PREDICTION\_GRAPH}      & START $\to$ csv\_prediction\_node $\to$ END \\
 \texttt{RESULT\_EMAIL\_GRAPH}        & START $\to$ notification\_node $\to$ END \\
 \texttt{CSV\_EMAIL\_GRAPH}           & START $\to$ notification\_node $\to$ END \\
@@ -379,6 +408,7 @@ review\_node & property\_graph.py & flow & review\_ready \\
 input\_node (manual) & property\_graph.py & numeric\_inputs, furnishing, neighborhood & mode, flow \\
 prediction\_node & prediction\_nodes.py & flow, context & result, comparables \\
 explanation\_node & explanation\_nodes.py & flow, result, comparables, explanation\_settings & explanation \\
+report\_node & report\_generator.py & flow, result, explanation, comparables & report \\
 csv\_prediction\_node & prediction\_nodes.py & input\_df, context & mode, output\_df \\
 notification\_node & notification\_nodes.py & recipient, result, flow, explanation, comparables, email\_settings & email\_sent \\
 \bottomrule
@@ -404,11 +434,13 @@ The user uploads a CSV file. The CSV Prediction Node validates that the file con
 The Prediction Node calls \texttt{find\_comparable\_properties()} from \texttt{prediction\_nodes.py}, which:
 
 \begin{enumerate}[leftmargin=1.5em]
-  \item Filters the training dataset for rows matching the same \texttt{Neighborhood}.
+\item Filters the training dataset for rows matching the same \texttt{Neighborhood}.
   \item Further filters to properties within $\pm$25\% of the query's \texttt{Total\_Square\_Footage}.
   \item Sorts by absolute distance from the predicted price.
   \item Returns the top 5 matches as a list of dictionaries.
 \end{enumerate}
+
+This project deliberately uses structured retrieval instead of vector-based RAG. A vector database such as FAISS or Chroma is valuable when the knowledge base is unstructured text and similarity depends on semantic meaning. Here, the retrieval corpus is a tabular property dataset with explicit columns such as neighbourhood, square footage, bedrooms, and price. Deterministic filtering is therefore more transparent and more defensible: the system can explain exactly why each comparable was selected, and the reviewer can verify the rule directly. This design avoids embedding-based matches that may look semantically similar but fail important numeric constraints.
 
 These comparable rows are:
 \begin{itemize}[leftmargin=1.5em]
@@ -438,10 +470,13 @@ The Explanation Node sends Groq a compact JSON object containing only confirmed 
   \item not cite exact feature importance values.
 \end{itemize}
 
-\subsubsection{Guardrail 4 --- Output Format Constraint}
+\subsubsection{Guardrail 4 --- Generator-Critic Cross-Validation}
+The Explanation Node does not accept the first LLM response blindly. A Generator Agent first drafts the four-bullet explanation from grounded JSON. A Critic Agent then checks whether each claim is supported by the same confirmed inputs, model output, and comparable rows. If the draft contains unsupported content, the critic must return a safer corrected explanation before the report is shown.
+
+\subsubsection{Guardrail 5 --- Output Format Constraint}
 The Explanation Node requires exactly four labelled bullets: \textbf{Summary}, \textbf{Market Context}, \textbf{Recommendation}, and \textbf{Risk Warning}. Fixing the output structure reduces the surface area for hallucinated content and keeps the advisory report consistent across all inputs.
 
-\subsubsection{Guardrail 5 --- Safe Fallbacks}
+\subsubsection{Guardrail 6 --- Safe Fallbacks}
 If \texttt{GROQ\_API\_KEY} is missing, the Input Node switches to a local rule-based regex parser so the system degrades gracefully. If the Explanation API call fails, a deterministic local fallback explanation is shown. Neither path crashes the UI or returns an empty advisory report.
 
 % =====================================================================
@@ -508,6 +543,7 @@ property-price-prediction/
 |   |-- input_nodes.py         # Groq extraction + rule-based fallback
 |   |-- prediction_nodes.py    # Feature engineering, ML inference, comps
 |   |-- explanation_nodes.py   # Grounded Groq explanation
+|   |-- report_generator.py    # Structured advisory report builder
 |   |-- notification_nodes.py  # HTML email + CSV attachment delivery
 |   |-- pages.py               # Streamlit UI pages and dialogs
 |   |-- config.py              # Paths, constants, feature lists
@@ -525,6 +561,8 @@ property-price-prediction/
 |-- notebooks/
 |   `-- training_colab.ipynb   # Full training and evaluation notebook
 |-- report/
+|   |-- milestone_2_report.pdf
+|   |-- milestone_2_report.tex
 |   |-- property_price_prediction_report.pdf
 |   `-- property_price_prediction_report.tex
 |-- system_architecture.png    # End-to-end architecture diagram
@@ -542,8 +580,9 @@ property-price-prediction/
   \item \textbf{Input Node} --- Groq extracts structured fields from natural-language input; defaults fill missing values.
   \item \textbf{Review Node} --- Streamlit dialog shows extracted values by source; user confirms or edits.
   \item \textbf{Prediction Node} --- feature row constructed, scaled, passed to both XGBoost models; comparable properties retrieved from training CSV.
-  \item \textbf{Explanation Node} --- confirmed inputs, model output, and comparables sent to Groq; four-bullet advisory explanation returned.
-  \item \textbf{UI Render} --- advisory card, property summary, comparable table, probability table, and explanation rendered.
+  \item \textbf{Explanation Node} --- confirmed inputs, model output, and comparables sent to Groq; generator and critic prompts produce a grounded four-bullet explanation.
+  \item \textbf{Report Node} --- prediction, explanation, inputs, comparables, probabilities, and disclaimer assembled into one structured advisory report.
+  \item \textbf{UI Render} --- advisory card plus dedicated report tabs for summary, confirmed inputs, comparable table, probability table, and explanation.
   \item \textbf{Notification Node} --- optional: HTML email with full report sent via SMTP.
 \end{enumerate}
 
@@ -556,9 +595,9 @@ property-price-prediction/
 \toprule
 \textbf{Page} & \textbf{Function} \\
 \midrule
-Prompt Agent  & Runs the full LangGraph flow: Groq extraction $\to$ review popup $\to$ prediction $\to$ explanation $\to$ email. \\
+Prompt Agent  & Runs the full LangGraph flow: Groq extraction $\to$ review popup $\to$ prediction $\to$ validated explanation $\to$ structured report $\to$ email. \\
 CSV Upload    & Batch prediction for uploaded CSV; download or email the output file. \\
-Manual Input  & Direct field entry form; reuses the same Prediction, Explanation, and Notification nodes. \\
+Manual Input  & Direct field entry form; reuses the same Prediction, Explanation, Report, and Notification nodes. \\
 About         & Summarises the LangGraph flow, model metrics, advisory label mapping, and financial disclaimer. \\
 \bottomrule
 \end{tabularx}

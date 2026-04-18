@@ -1,0 +1,4 @@
+Class,Precision,Recall,F1-score,Support
+0 Avoid,0.988,0.964,0.976,167
+1 Hold,0.96,0.994,0.977,171
+2 Buy,1.0,0.909,0.952,22
